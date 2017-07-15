@@ -1,3 +1,29 @@
+"""
+    MIT License
+
+    L I C E N S E:
+        Copyright (c) 2014-2017 Cedric BAZILLOU All rights reserved.
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy of this software 
+    and associated documentation files (the "Software"), to deal in the Software without restriction,
+    including without limitation the rights to use, copy, modify, merge, publish, distribute,
+    sublicense, and/or sell copies of the Software,and to permit persons to whom the Software 
+    is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all copies 
+    or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+    INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
+    HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, 
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+
+    https://opensource.org/licenses/MIT
+"""
+
+
 import maya.OpenMaya 
 import maya.OpenMayaAnim 
 import maya.OpenMayaUI
@@ -30,7 +56,18 @@ class Omphallos(object):
     def __init__(self):
         self.repository = None
 
-    def collectOriginShape(self, targetName, targetShapeFile):
+    def collectOriginShape(self, 
+                           targetName, 
+                           targetShapeFile):
+        """
+            This method will package all shape under a root transform in an alembic file.
+            ( Origin shapes used by deformers specifically )
+
+            args:
+                targetName(string): root name used to collect all shape data.
+
+                targetShapeFile(file path): alembic file path
+        """
         shapeArray = maya.cmds.ls(intermediateObjects=True, 
                                   geometry=True)
 
@@ -112,6 +149,16 @@ class Omphallos(object):
                      shapeArray,
                      targetName, 
                      targetShapeFile):
+        """
+            This store shape data from the provided shapeArray to an alembic file.
+
+            args:
+                shapeArray(array of shape name(string)).
+
+                targetName(string): root name used to collect all shape data.
+
+                targetShapeFile(file path): alembic file path
+        """
         self.repository = maya.cmds.createNode('transform', n=targetName)
         maya.cmds.addAttr(self.repository, ln='shapePaths', dt='stringArray')
 
@@ -177,7 +224,8 @@ class Omphallos(object):
         maya.cmds.setAttr('{}.time'.format(self.alembicNode), 1)
 
         for shapeIndex, shape in enumerate(shapePathArray):
-            maya.cmds.connectAttr('{0}.outPolyMesh[{1}]'.format(self.alembicNode, shapeIndex),
+            maya.cmds.connectAttr('{0}.outPolyMesh[{1}]'.format(self.alembicNode,
+                                                                shapeIndex),
                                   '{0}.inMesh'.format(shape),
                                   f=True)
 
@@ -217,7 +265,7 @@ class PointWeights(object):
             return
 
         skinSettings = settings.SkinSettings(skinNode)
-        shapeSettings = ShapeSettings(skinSettings.shape)
+        shapeSettings = settings.ShapeSettings(skinSettings.shape)
 
         with open(targetFile, 'w') as skinFile:
             for pointIndex in xrange(shapeSettings.pointCount):
@@ -258,6 +306,13 @@ class DataInjection(object):
 
     def getSkinNodeArray(self,
                          objectArray):
+        """
+            Validate skinclusters influencing a list of transform
+            (specifically their shapes). 
+
+            args:
+                objectArray(list of transform names influenced by a skincluster).
+        """
         self.skinNodeArray = []
 
         for inputTransform in objectArray:
@@ -273,6 +328,17 @@ class DataInjection(object):
                      targetArchiveFile,
                      unpackDirectory,
                      outputSkinSettings):
+        """
+            Save the current skin dictionary to a json file
+
+            args:
+                targetArchiveFile(output archive zip file path(string))
+
+                outputSkinSettings(dict)
+
+            returns:
+                jsonSkinFile, jsonSkinFileName (file path(string))
+        """
         jsonSkinFileExtention = os.path.splitext(targetArchiveFile)[1]
 
         jsonSkinFileName = os.path.basename(targetArchiveFile).replace(jsonSkinFileExtention, '.json')
@@ -289,6 +355,22 @@ class DataInjection(object):
                                           jsonSkinFile,
                                           jsonSkinFileName,
                                           targetArchiveFile):
+        """
+            Bind together skin data and their json skin settings
+            into an output zip archive.
+
+            args:
+                sceneWeights(list of SkinSettings).
+                (mostly relevant for their skinData path)
+
+                jsonSkinFile(string):json file path.
+                jsonSkinFileName(string): filename of jsonSkinFile.
+
+                targetArchiveFile(file name (string)): file path for the skin Zip file
+
+            returns:
+                jsonSkinFile, jsonSkinFileName (file path(string))
+        """
         with zipfile.ZipFile(targetArchiveFile, 
                              'w', 
                              compression=zipfile.ZIP_DEFLATED) as outputZip:
@@ -301,7 +383,16 @@ class DataInjection(object):
     def transferToDisk(self, 
                        skin, 
                        targetSkinFile):
+        """
+            Export data for the provided skincluster .
+
+            args:
+                skin(string):Name of the skinCluster to save.
+
+                targetSkinFile(string):file path for the exported data.
+        """
         self.timeProcessing.displayReport = False
+
         with self.timeProcessing:
             maya.cmds.select(skin, r=True)
             maya.cmds.file(targetSkinFile,
@@ -317,6 +408,14 @@ class DataInjection(object):
     def saveWeights(self,
                     skin,
                     targetSkinDirectory):
+        """
+            Prepare element for export procedure.
+
+            args:
+                skin(string):Name of the skinCluster to save.
+
+                targetSkinDirectory(string):directory path for the exported data.
+        """
         maya.cmds.select(skin, 
                          r=True)
 
@@ -334,6 +433,21 @@ class DataInjection(object):
                inputTransform,
                targetDirectory,
                displayReport=True):
+        """
+            Collect skin settings form a transform name.
+            (specifically from its shape).
+
+            args:
+                inputTransform(string):Name of the transform with a shape deformed by a skincluster.
+
+                targetDirectory(string):directory path for the exported data.
+
+            kwargs:
+                displayReport(bool). print time need to evaluate this operation.
+
+            returns:
+                (SkinSettings)
+        """
         self.timeProcessing.report = ''
 
         self.timeProcessing.processObjectCount = 0
@@ -357,6 +471,15 @@ class DataInjection(object):
                             objectArray,
                             unpackDirectory,
                             exposeWeightDetails):
+        """
+            Collect skin settings from a list of transform.
+            (specifically from its shape).
+
+            args:
+                objectArray(list of string):Names of the transform with a shape deformed by a skincluster.
+
+                unpackDirectory(string):directory path for the exported data.
+        """
         for component in objectArray:
             targetSkinSettings = self.export(component,
                                              unpackDirectory,
