@@ -1,5 +1,6 @@
 import maya.OpenMaya 
 import maya.OpenMayaAnim 
+import maya.OpenMayaUI
 import maya.cmds 
 import maya.mel
 
@@ -14,162 +15,7 @@ import uuid
 import zipfile
 
 
-class AsciiInjection(object):
-    def __init__(self):
-        self.timeProcessing = TimeProcessor()
-
-    def transferSkinNodeToDisk(self, 
-                               skinNodeArray, 
-                               targetSkinDirectory):
-        outputSkinSettings = {}
-        with self.timeProcessing:
-            skinPrefix = uuid.uuid1()
-            for skin in skinNodeArray:
-                targetSkinFileName = '{0}_{1}_skinWeights.ma'.format(skin, skinPrefix)
-                targetSkinFile = os.path.join(targetSkinDirectory,
-                                              targetSkinFileName)
-
-                outputSkinSettings[targetSkinFileName] = [skin, targetSkinFile]
-
-                maya.cmds.select(skin, r=True)
-                maya.cmds.file(targetSkinFile,
-                               force=True, 
-                               typ="mayaAscii",
-                               es=True,
-                               ch=False,
-                               chn=False,
-                               con=False, 
-                               exp=False,
-                               sh=False)
-
-            report = "<AsciiExtraction Report: \n\tSuccessfully save {0} elements>"
-            self.timeProcessing.report = report.format(len(skinNodeArray))
-
-        targetArchiveFile = os.path.join(targetSkinDirectory,
-                                         'skinWeights.zip')
-
-        jsonSkinFile = os.path.join(targetSkinDirectory,
-                                   'jsonsWeightSetting.json')
-
-        with open(jsonSkinFile, "w") as outfile:
-            json.dump(outputSkinSettings, outfile , indent=4)
-
-        with zipfile.ZipFile(targetArchiveFile, 'w', compression=zipfile.ZIP_DEFLATED) as outputZip:
-            outputZip.write(jsonSkinFile, r'%s'%'jsonsWeightSetting.json')
-            os.remove(jsonSkinFile)
-
-            for component in outputSkinSettings:
-                outputZip.write(outputSkinSettings[component][1], r'%s'%component)
-                os.remove(outputSkinSettings[component][1])
-            
-    def filterAscii(self, archive, inputFile, inputSkin):
-        startCollect = False
-        with archive.open(inputFile, 'r') as asciiFile:
-            for line in asciiFile:
-                if 'createNode skinCluster -n' in line:
-                    startCollect = True
-
-                if startCollect is True and 'createNode' not in line:
-                    if 'rename -uid' not in line:
-                        yield line
-
-                if startCollect is True and 'createNode' in line and \
-                    'createNode skinCluster -n' not in line:
-                    startCollect = False
-
-    def consolidateFile(self, archive, inputFile, inputSkin):
-        with open("C:/Users/cedric/Desktop/skinIO/UU2.ma", 'w') as asciiFile:
-            #asciiFile.write('requires maya "2017";\n')
-            for line in self.filterAscii(archive, inputFile, inputSkin):
-                asciiFile.write(line)
-
-    def importWeight(self, inputFile, archive, inputSkin):
-        self.consolidateFile(archive, inputFile, inputSkin)
-        #maya.cmds.select(inputSkin, r=True)
-        maya.cmds.file("C:/Users/cedric/Desktop/skinIO/UU2.ma",
-                       i=True, 
-                       type="mayaAscii")
-                           
-    def importWeights(self, sourceArchiveFile):
-        if not os.path.exists(sourceArchiveFile):
-            return
-
-        jsonArray = []
-        with zipfile.ZipFile(sourceArchiveFile, 'r') as archive:
-            jsonList = [info.filename for info in archive.infolist() 
-                        if info.filename.endswith('.json')]
-
-            jsonArray = [json.loads(archive.read(jsonElement)) for jsonElement in jsonList]
-
-        if len(jsonArray) == 0:
-            return
-
-        jsonSettings = jsonArray[0]
-    
-        with zipfile.ZipFile(sourceArchiveFile, 'r') as archive:
-            with self.timeProcessing:
-                for skin in jsonSettings :
-                    inputFile = os.path.basename(skin)
-                    inputSkin = jsonSettings[skin][0]
-
-                    self.importWeight(inputFile, archive, inputSkin)
-
-
-class BinaryInjection(object):
-    def __init__(self):
-        self.timeProcessing = TimeProcessor()
-
-    def transferSkinNodeToDisk(self, 
-                               skinNodeArray, 
-                               targetSkinFile):
-        with self.timeProcessing:
-            maya.cmds.select(skinNodeArray, r=True)
-            maya.cmds.file(targetSkinFile,
-                           force=True, 
-                           typ="mayaBinary",
-                           es=True,
-                           ch=False,
-                           chn=False,
-                           con=False, 
-                           exp=False,
-                           sh=False) 
-
-            report = "<BinaryExtraction Report: \n\tSuccessfully save {0} elements>"
-            self.timeProcessing.report = report.format(len(skinNodeArray))
-
-    def importWeights(self, 
-                      targetSkinFile,
-                      skinNodeArray=None):
-        namespacePrefix = "skinNamespace_weights"
-        with self.timeProcessing:
-            maya.cmds.file(targetSkinFile,
-                           i=True, 
-                           type="mayaBinary",  
-                           ignoreVersion=True, 
-                           ra=True, 
-                           mergeNamespacesOnClash=False, 
-                           namespace=namespacePrefix, 
-                           pr=True)
-
-            importSkinNodeArray = maya.cmds.namespaceInfo(namespacePrefix, 
-                                                          listOnlyDependencyNodes=True)
-
-            if skinNodeArray is None:
-                skinNodeArray = [skin.replace(namespacePrefix+':', '')
-                                 for skin in importSkinNodeArray 
-                                 if maya.cmds.objExists(skin.replace(namespacePrefix+':', '')) is True \
-                                 and maya.cmds.nodeType(skin) == 'skinCluster']
-
-            for skin in skinNodeArray:
-                maya.cmds.nodeCast(skin, namespacePrefix+':' + skin, 
-                                   disconnectUnmatchedAttrs=True,
-                                   swapNames=True )
-
-            maya.cmds.namespace(removeNamespace=namespacePrefix, 
-                                deleteNamespaceContent=True)
-
-            report = "<BinaryInjection Report \Import {0} elements>"
-            self.timeProcessing.report = report.format(len(skinNodeArray))
+__version__ = '0.38.5'
 
 
 class Omphallos(object):
@@ -254,10 +100,269 @@ class Omphallos(object):
 
         maya.cmds.delete(self.repository)
 
+    def collectShape(self, 
+                     shapeArray,
+                     targetName, 
+                     targetShapeFile):
+        self.repository = maya.cmds.createNode('transform', n=targetName)
+        maya.cmds.addAttr(self.repository, ln='shapePaths', dt='stringArray')
+
+        shapePathArray = []
+
+        for shape in shapeArray:
+            shapePath = str(maya.cmds.ls(shape, long=True)[0])
+            isNotEmpty = maya.cmds.polyEvaluate(shapePath, v=True)
+
+            if isNotEmpty == 0:
+                continue
+
+            shapePathArray.append(shapePath)
+            maya.cmds.parent(shape, self.repository, add=True, shape=True)
+
+        maya.cmds.setAttr(self.repository+'.shapePaths',
+                          len(shapePathArray),
+                          *(shapePathArray),
+                          type='stringArray')
+
+        duplicateSet = maya.cmds.duplicate(self.repository)
+        maya.cmds.delete(self.repository)
+
+        self.repository = maya.cmds.rename(duplicateSet, targetName)
+
+        exportList =  maya.cmds.listRelatives(self.repository,
+                                              s=True,
+                                              fullPath=True)
+
+        for shape in exportList:
+            maya.cmds.setAttr(shape+'.intermediateObject', 0)
+
+        ffdComponents = maya.cmds.lattice(self.repository, 
+                                          divisions=[2, 2, 2], 
+                                          objectCentered=False,
+                                          ldv=[2, 2, 2],
+                                          n='{}_Ffd1'.format(self.repository))
+
+        maya.cmds.setAttr(ffdComponents[0]+'.outsideLattice', 1)
+
+        maya.cmds.setKeyframe(ffdComponents[1]+".tz", v=0.0, t=1)
+        maya.cmds.setKeyframe(ffdComponents[1]+".tz", v=1.0, t=2)
+
+        exportCommand = "-fr 1 2 -root |{node} -u {attribute} -file {targetFile}"
+        exportCommand = exportCommand.format(node=self.repository,
+                                             attribute='shapePaths',
+                                             targetFile=targetShapeFile)
+
+        maya.cmds.AbcExport(verbose=True, j=exportCommand)
+
+        maya.cmds.delete(self.repository, ch=True)
+        maya.cmds.delete(self.repository)
+
+        self.repository = maya.cmds.createNode('transform', n=targetName)
+
+        importCommand = 'AbcImport -crt -ct "|{shape}"  "{inputFile}";'
+        importCommand = importCommand.format(shape=targetName,
+                                             inputFile=targetShapeFile)
+
+        self.alembicNode = maya.mel.eval(importCommand)
+
+        maya.cmds.disconnectAttr('time1.outTime', '{}.time'.format(self.alembicNode))
+        maya.cmds.setAttr('{}.time'.format(self.alembicNode), 1)
+
+        for shapeIndex, shape in enumerate(shapePathArray):
+            maya.cmds.connectAttr('{0}.outPolyMesh[{1}]'.format(self.alembicNode, shapeIndex),
+                                  '{0}.inMesh'.format(shape),
+                                  f=True)
+
+        maya.cmds.delete(self.repository)
+
+
+class SelectionSaved(object):
+    def __init__(self):
+        self.currentSelection = []
+
+    def __enter__(self):
+        self.currentSelection = maya.cmds.ls(sl=True)
+
+    def __exit__(self, 
+                 type, 
+                 value, 
+                 traceback):
+        if len(self.currentSelection)==0:
+            return
+
+        maya.cmds.select(self.currentSelection,
+                         r=True)
+
+
+class SkinDisabled(object):
+    ENABLE_VALUE = 1.0
+
+    DISABLE_VALUE = 0.0
+
+    def __init__(self,
+                 currentSkinCluster):
+        self.lockState = False
+
+        self.jointLockState = []
+
+        self.skinInfluencelist = []
+
+        self.currentSkinCluster = currentSkinCluster
+
+    def __enter__(self):
+        '''
+            Disable skinCluster before write operation
+        '''
+        self.lockState = maya.cmds.getAttr('{0}.{1}'.format(self.currentSkinCluster,
+                                                            'normalizeWeights'), l=True)
+
+        maya.cmds.setAttr('{0}.nw'.format(self.currentSkinCluster), l=False)
+
+        maya.cmds.setAttr('{0}.envelope'.format(self.currentSkinCluster), l=False)
+        
+        maya.cmds.setAttr('{0}.normalizeWeights'.format(self.currentSkinCluster), 
+                          self.DISABLE_VALUE)
+
+        maya.cmds.setAttr('{0}.envelope'.format(self.currentSkinCluster), 
+                          self.DISABLE_VALUE)
+
+        self.jointLockState = []
+        self.skinInfluencelist = maya.cmds.skinCluster(self.currentSkinCluster,
+                                                       q=True,
+                                                       inf=True)
+
+        for joint in self.skinInfluencelist :
+            self.jointLockState.append(maya.cmds.getAttr('{0}.liw'.format(joint)))
+            maya.cmds.setAttr('{0}.liw'.format(joint),
+                              self.DISABLE_VALUE)
+
+    def __exit__(self, 
+                 type, 
+                 value, 
+                 traceback):
+        '''
+            Restore skinCluster after write operation
+        '''
+        maya.cmds.setAttr('{0}.normalizeWeights'.format(self.currentSkinCluster), 
+                          self.ENABLE_VALUE)
+
+        maya.cmds.setAttr('{0}.normalizeWeights'.format(self.currentSkinCluster), 
+                                                        l=self.lockState)
+
+        maya.cmds.setAttr('{0}.envelope'.format(self.currentSkinCluster), 
+                          self.ENABLE_VALUE)
+        
+        for jointIndex, joint in enumerate(self.skinInfluencelist) :
+            maya.cmds.setAttr('{0}.liw'.format(joint),
+                              self.jointLockState[jointIndex])
+
+
+class TimeProcessor(object):
+    def __init__(self):
+        self.startTime = 0.0
+        self.endTime = 0.0
+        self.report = ''
+        self.cleanupNodes = []
+        self.timeRange = 0
+
+        self.displayReport = True
+
+        self.displayProgressbar = False
+        self.progressbar = None
+        self.progressbarRange = 1
+
+        self.processObjectCount = 0
+
+    def __enter__(self):
+        if self.displayProgressbar is True:
+            self.progressbar = maya.OpenMayaUI.MProgressWindow()
+            self.progressbar.reserve()
+            self.progressbar.setProgressRange(0, self.progressbarRange)
+
+            self.progressbar.startProgress()
+
+        self.stampProcessingTime()
+
+    def __exit__(self, type, value, traceback):
+        if len(self.cleanupNodes) > 0:
+            maya.cmds.delete(self.cleanupNodes)
+
+        self.reportProcessingTime()
+
+        if self.displayProgressbar is True:
+            self.progressbar.endProgress()
+
+    def stampProcessingTime(self):
+        self.startTime = time.clock()
+
+    def reportProcessingTime(self):
+        self.endTime = time.clock()
+        self.timeRange = (self.endTime - self.startTime)
+
+        self.report = '{0}\n{1}\nProcessings took {2} seconds'.format(self.report,
+                                                                      '-'*70,
+                                                                      self.timeRange)
+
+        if self.displayReport is True:
+            print self.report
+
+
+class TemporaryNamespace(object):
+    def __init__(self,
+                 rootNameSpace,
+                 namespacePrefix,
+                 targetSkinFile=None,
+                 fileType="mayaBinary"):
+        self.rootNameSpace = rootNameSpace
+
+        self.namespacePrefix = namespacePrefix
+
+        self.targetSkinFile = targetSkinFile
+
+        self.fileType = fileType
+
+    def __enter__(self):
+        if self.targetSkinFile is None:
+            maya.cmds.namespace(addNamespace=self.namespacePrefix)
+
+            maya.cmds.namespace(setNamespace=self.namespacePrefix)
+        else:
+            maya.cmds.file(self.targetSkinFile,
+                           i=True, 
+                           type=self.fileType,  
+                           ignoreVersion=True, 
+                           ra=True, 
+                           mergeNamespacesOnClash=False, 
+                           namespace=self.namespacePrefix, 
+                           pr=True)
+
+    def __exit__(self, 
+                 type, 
+                 value, 
+                 traceback):
+        if self.targetSkinFile is None:
+            maya.cmds.namespace(setNamespace=self.rootNameSpace)
+
+            maya.cmds.namespace(removeNamespace=self.namespacePrefix)
+        else:
+            maya.cmds.namespace(removeNamespace=self.namespacePrefix, 
+                                deleteNamespaceContent=True)
+
 
 class TemporaryDirectory(object):
-    def __init__(self, suffix="", prefix="tmp", dir=None):
-        self.tempfolder = tempfile.mkdtemp(suffix, prefix, dir)
+    def __init__(self, 
+                 suffix="", 
+                 prefix="tmp", 
+                 dir=None):
+        if dir is None:
+            self.tempfolder = tempfile.mkdtemp(suffix, prefix, dir)
+        else:
+            if os.path.exists(dir): 
+                self.tempfolder = dir 
+            else:
+                maya.cmds.sysFile(dir, makeDir=True)
+                                                    
+                self.tempfolder = dir
 
     def __enter__(self):
         return self.tempfolder
@@ -289,299 +394,50 @@ class ObjectEncoder(json.JSONEncoder):
         return inputObject
 
 
-class SkinSettings(object):
+class SkinValidator(object):
     def __init__(self):
-        self.deformerName = None
-        self.shape  = None
-        self.influences = []
+        self.isInvalid = False
 
-        self.skinningMethod = 0
-        self.normalizeWeights = False
-        self.abcWeightsFile = None
+        self.rebuildTime = 0
 
-        self.processingTime = 0
-        self.report = ''
+        self.skinWasrebuilt = False
 
-    def toJson(self):
-        return json.dumps(self, 
-                          cls=ObjectEncoder, 
-                          indent=2, 
-                          sort_keys=True)
+        self.rootNameSpace = None
 
+        self.namespacePrefix = None
 
-class SkinSet(object):
-    def __init__(self, inputSkinCluster):
-        self.shapePath = maya.OpenMaya.MDagPath()
-        self.jointPaths = maya.OpenMaya.MDagPathArray()
-        self.skinFunctionUtils = None
-
-        self.extractData(inputSkinCluster)
-
-    def getMObject(self, nodeName):
-        selList = maya.OpenMaya.MSelectionList()
-        maya.OpenMaya.MGlobal.getSelectionListByName(nodeName, 
-                                                     selList)
-        depNode = maya.OpenMaya.MObject()
-        selList.getDependNode(0, depNode) 
-
-        return depNode
-
-    def extractData(self, inputSkinCluster):
-        skinClusterApiObject = self.getMObject(inputSkinCluster)
-        self.skinFunctionUtils = maya.OpenMayaAnim.MFnSkinCluster(skinClusterApiObject)
-
-        self.skinFunctionUtils.influenceObjects(self.jointPaths)
-        self.skinFunctionUtils.getPathAtIndex(0, self.shapePath)
-
-
-class ClusterIO(object):
-    def __init__(self):
-        self.weights = maya.OpenMaya.MDoubleArray()
-        self.indexArray = maya.OpenMaya.MIntArray()
-
-        self.joint = ''
-        self.setType = '' #cluster/All
-
-
-class TimeProcessor(object):
-    def __init__(self):
-        self.startTime = 0.0
-        self.endTime = 0.0
-        self.report = ''
-        self.cleanupNodes = []
-        self.timeRange = 0
-
-        self.displayReport = True
-
-        self.displayProgressbar = False
-        self.progressbar = None
-        self.progressbarRange = 1
-
-    def __enter__(self):
-        if self.displayProgressbar is True:
-            self.progressbar = maya.OpenMayaUI.MProgressWindow()
-            self.progressbar.reserve()
-            self.progressbar.setProgressRange(0, self.progressbarRange)
-
-            self.progressbar.startProgress()
-
-        self.stampProcessingTime()
-
-    def __exit__(self, type, value, traceback):
-        if len(self.cleanupNodes) > 0:
-            maya.cmds.delete(self.cleanupNodes)
-
-        self.reportProcessingTime()
-        if self.displayProgressbar is True:
-            self.progressbar.endProgress()
-
-    def stampProcessingTime(self):
-        self.startTime = time.clock()
-
-    def reportProcessingTime(self):
-        self.endTime = time.clock()
-        self.timeRange = (self.endTime - self.startTime)
-
-        self.report = '{0}\n{1}\nProcessings took {2} seconds'.format(self.report,
-                                                                      '-'*70,
-                                                                      self.timeRange)
-        if self.displayReport is True:
-            print self.report
-
-
-class SkinIO(object):
-    TARGET_WEIGHT_PROPERTY = 'skinRepository'
-    WEIGHT_HOLDER_TYPE = 'joint'
-    WEIGHT_PROPERTY_TYPE = 'doubleArray'
-
-    def __init__(self):
-        self.weightFunctionUtils = maya.OpenMaya .MFnDoubleArrayData()
-        self.timeProcessing = TimeProcessor()
-
-    def getMObject(self, nodeName):
-        selList = maya.OpenMaya.MSelectionList()
-        maya.OpenMaya.MGlobal.getSelectionListByName(nodeName, 
-                                                     selList)
-        depNode = maya.OpenMaya.MObject()
-        selList.getDependNode(0, depNode) 
-
-        return depNode
-
-    def collectInfos(self, 
-                    inputSkinNode):
-        jointArray = maya.cmds.skinCluster(inputSkinNode, q=True, inf=True)
-        geometry = maya.cmds.skinCluster(inputSkinNode, q=True, geometry=True)[0]
-        
-        return [len(jointArray), geometry]
-
-    def publishReport(self, inputSkinNode, targetSkinFile, sampleLength):
-        metaData = self.collectInfos(inputSkinNode)
-        vertexCount = maya.cmds.polyEvaluate(metaData[1], v=True)
-
-        componentReport = '\n<Skin Weights Saving report:>' 
-        componentReport += '\n\tExport to {} was successful'.format(targetSkinFile) 
-        componentReport += '\n\tGeometry {0}'.format(metaData[1]) 
-        componentReport += '\n\t\tNumber of vertex {0}'.format(vertexCount)
-        componentReport += '\n\t\tNumber of influences {0}'.format(metaData[0]) 
-        componentReport += '\n\t\tNumber of weights Samples {0}'.format(sampleLength)
-
-        return componentReport
-
-    def getShapeFullComponents(self, skinInput):
-        simpleShapeType = ['mesh', 'nurbsCurve']
-        shapeType = maya.cmds.nodeType(skinInput.shapePath.fullPathName())
-
-        if shapeType in simpleShapeType:
-            componentType = maya.OpenMaya.MFn.kMeshVertComponent
-
-            if shapeType == 'mesh':
-                shapeFunctionUtils = maya.OpenMaya.MFnMesh(skinInput.shapePath)
-                pointCount = shapeFunctionUtils.numVertices()
-
-                pointComponentFunction = maya.OpenMaya.MFnSingleIndexedComponent()
-
-            elif shapeType == 'nurbsCurve':
-                shapeFunctionUtils = maya.OpenMaya.MFnNurbsCurve(skinInput.shapePath)
-                pointCount = shapeFunctionUtils.numVertices()
-                componentType = OpenMaya.MFn.kCurveCVComponent
-
-            fullComponent = pointComponentFunction.create(componentType)
-            pointComponentFunction.setCompleteData(pointCount)
-            
-            return fullComponent
-
-        elif shapeType == 'nurbsSurface':
-            componentType = maya.OpenMaya.MFn.kSurfaceCVComponent
-            shapeFunctionUtils = maya.OpenMaya.MFnNurbsSurface(skinInput.shapePath)
-
-            pointComponentFunction = maya.OpenMaya.MFnDoubleIndexedComponent()
-            fullComponent = pointComponentFunction.create(componentType)
-
-            pointComponentFunction.setCompleteData(shapeFunctionUtils.numCVsInU(),
-                                                   shapeFunctionUtils.numCVsInV())
-
-            return fullComponent
-
-        elif shapeType == 'lattice':
-            componentType = maya.OpenMaya.MFn.kLatticeComponent
-            shapeFunctionUtils = maya.OpenMaya.MFnLattice(skinInput.shapePath)
-
-            sDivivision = 0
-            tDivivision = 0
-            uDivivision = 0
-
-            shapeFunctionUtils.getDivisions(sDivivision,
-                                            tDivivision,
-                                            uDivivision)
-
-            pointComponentFunction = maya.OpenMaya.MFnTripleIndexedComponent()
-            fullComponent = pointComponentFunction.create(componentType)
-            
-            pointComponentFunction.setCompleteData(sDivivision,
-                                                   tDivivision,
-                                                   uDivivision)
-
-            return fullComponent
-
-    def collectSkinWeights(self, inputSkinCluster):
-        skinInput = SkinSet(inputSkinCluster)
-        fullComponent = self.getShapeFullComponents(skinInput)
-
-        skinData = ClusterIO()
-        skinData.setType = 'All'
-        skinData.joint = self.TARGET_WEIGHT_PROPERTY
-
-        intptrUtil = maya.OpenMaya.MScriptUtil() 
-        intptrUtil.createFromInt(0)
-        intPtr = intptrUtil.asUintPtr()
-
-        skinInput.skinFunctionUtils.getWeights(skinInput.shapePath, 
-                                               fullComponent,
-                                               skinData.weights,
-                                               intPtr)
-
-        return skinData
-
-    def tranferWeightToAttribute(self, 
-                                 skinWeightsHolder,
-                                 inputSkinData):
-        weightWriter = maya.OpenMaya.MDGModifier()
-
-        targetAttribute = '{}_weights'.format(inputSkinData.joint)
-        maya.cmds.addAttr(skinWeightsHolder, 
-                          ln=targetAttribute,
-                          dt=self.WEIGHT_PROPERTY_TYPE)
-
-        skinWeightsHolderApiObject = self.getMObject(skinWeightsHolder)
-        nodeFunctionUtils = maya.OpenMaya.MFnDependencyNode(skinWeightsHolderApiObject)
-
-        skinWeightsApiPlug = nodeFunctionUtils.findPlug(targetAttribute,
-                                                        False)
-
-        skinDataApiObject = self.weightFunctionUtils.create(inputSkinData.weights)
-
-        weightWriter.newPlugValue(skinWeightsApiPlug,
-                                  skinDataApiObject)
-  
-        weightWriter.doIt()
-
-        return targetAttribute
-
-    def transferToDisk(self,
-                       skinWeightsHolder,
-                       skinWeight,
-                       targetSkinFile):
-        targetAttribute = self.tranferWeightToAttribute(skinWeightsHolder,
-                                                        skinWeight)
-
-        exportCommand = " -root |{node} -u {attribute} -file {targetFile}"
-        exportCommand = exportCommand.format(node=skinWeightsHolder,
-                                             attribute=targetAttribute,
-                                             targetFile=targetSkinFile)
-
-        maya.cmds.AbcExport(j=exportCommand)
-
-    def saveWeights(self, 
-                    inputSkinNode,
-                    targetSkinDirectory,
-                    displayReport=True):
-        targetSkinFile = posixpath.join(targetSkinDirectory,
-                                        '{0}.abc'.format(inputSkinNode))
-
-        self.timeProcessing.displayReport = displayReport
-
-        with self.timeProcessing:
-            skinWeightsHolder = maya.cmds.createNode(self.WEIGHT_HOLDER_TYPE)
-            self.timeProcessing.cleanupNodes.append(skinWeightsHolder)
-
-            skinWeight = self.collectSkinWeights(inputSkinNode)
-
-            self.transferToDisk(skinWeightsHolder, skinWeight, targetSkinFile)
-
-            self.timeProcessing.report = self.publishReport(inputSkinNode, 
-                                                            targetSkinFile,
-                                                            skinWeight.weights.length())
-        return targetSkinFile
-
-    def getSkinFromObjectSet(self, inputShape):
+    def getSkinClusters(self, inputTransform):
+        skinClusters = []
         outputSkins = []
-        skinObjectSets = maya.cmds.listConnections(inputShape,
-                                                   type='objectSet',
-                                                   source=True)
+        shapeNode = None
 
-        if skinObjectSets is None:
+        supportedType = ['mesh','nurbsCurve', 'nurbsSurface', 'lattice']
+        shapeType = maya.cmds.nodeType(inputTransform)
+
+        if shapeType in supportedType == True:
+            meshNodes.append(inputTransform)
+        else:
+            meshNodes = maya.cmds.listRelatives(inputTransform, s=True, fullPath=True)
+
+        if meshNodes is None or len(meshNodes) < 1 :
             return []
-        
-        for objectSet in skinObjectSets:
-            skinArray = maya.cmds.listConnections(objectSet,
-                                                  type='skinCluster')
 
-            if skinArray is None:
-                continue
+        for shape in meshNodes:
+            skinHistory = maya.cmds.ls( list(set(maya.cmds.listHistory(inputTransform))), type='skinCluster')
+            if skinHistory != None or len(skinHistory) > 0 :
+                skinClusters.extend(skinHistory)
 
-            outputSkins.extend(skinArray)
+        skinShaped = meshNodes[0].split('|')[-1]
+        if skinClusters != None or len(skinClusters) > 0 :
+            for skin in skinClusters:
+                if skin not in outputSkins:
+                    SkinSet = maya.cmds.ls(maya.cmds.listConnections('%s.message'% skin), type='objectSet')[0]
+                    geo = maya.cmds.listConnections('%s.dagSetMembers[0]'%SkinSet, sh=True)[0]
+                    
+                    if skinShaped in geo:
+                        outputSkins.append(skin)
 
-        return outputSkins
+        return list(set(outputSkins))
 
     def getSkinHistory(self, inputTransform):
         skinClusters = []
@@ -617,242 +473,70 @@ class SkinIO(object):
 
         return list(set(outputSkins))
 
-    def getSkinClusters(self, inputTransform):
-        skinClusters = []
+    def getSkinFromObjectSet(self, inputShape):
         outputSkins = []
-        shapeNode = None
+        skinObjectSets = maya.cmds.listConnections(inputShape,
+                                                   type='objectSet',
+                                                   source=True)
 
-        supportedType = ['mesh','nurbsCurve', 'nurbsSurface', 'lattice']
-        shapeType = maya.cmds.nodeType(inputTransform)
-
-        if shapeType in supportedType == True:
-            meshNodes.append(inputTransform)
-        else:
-            meshNodes = maya.cmds.listRelatives(inputTransform, s=True, fullPath=True)
-
-        if meshNodes is None or len(meshNodes) < 1 :
+        if skinObjectSets is None:
             return []
+        
+        for objectSet in skinObjectSets:
+            skinArray = maya.cmds.listConnections(objectSet,
+                                                  type='skinCluster')
 
-        for shape in meshNodes:
-            skinHistory = maya.cmds.ls( list(set(maya.cmds.listHistory(inputTransform))), type='skinCluster')
-            if skinHistory != None or len(skinHistory) > 0 :
-                skinClusters.extend(skinHistory)
+            if skinArray is None:
+                continue
 
-        skinShaped = meshNodes[0].split('|')[-1]
-        if skinClusters != None or len(skinClusters) > 0 :
-            for skin in skinClusters:
-                if skin not in outputSkins:
-                    SkinSet = maya.cmds.ls(maya.cmds.listConnections('%s.message'% skin), type='objectSet')[0]
-                    geo = maya.cmds.listConnections('%s.dagSetMembers[0]'%SkinSet, sh=True)[0]
-                    
-                    if skinShaped in geo:
-                        outputSkins.append(skin)
+            outputSkins.extend(skinArray)
 
-        return list(set(outputSkins))
-
-    def getSkinSettings(self, skinDeformer):
-        skinSettings = SkinSettings()
-
-        skinSettings.deformerName = skinDeformer
-        skinSettings.influences = maya.cmds.skinCluster(skinDeformer, q=True, inf=True)
-        skinSettings.skinningMethod = maya.cmds.getAttr('{}.skinningMethod'.format(skinDeformer))
-        skinSettings.normalizeWeights = maya.cmds.getAttr('{}.normalizeWeights'.format(skinDeformer))
-
-        return skinSettings
-
-    def extractSettings(self, inputSkinSettings):
-        inputSkinSettings.report = ''
-        jsonData = inputSkinSettings.toJson()
-
-        return jsonData
-
-    def saveSettings(self, 
-                     targetArchiveFile, 
-                     outputSkinSettings):
-        jsonSkinFileExtention = os.path.splitext(targetArchiveFile)[1]
-        jsonSkinFile = targetArchiveFile.replace(jsonSkinFileExtention, '.json')
-
-        jsonSkinFileName = os.path.basename(targetArchiveFile).replace(jsonSkinFileExtention, '.json')
-
-        with open(jsonSkinFile, "w") as outfile:
-            json.dump(outputSkinSettings, outfile , indent=4)
-
-        return jsonSkinFile, jsonSkinFileName
-
-    def export(self,
-               inputTransform,
-               targetDirectory,
-               skipZipArchive=False,
-               displayReport=True,
-               intersectSceneWeights=None):
-        #inputSkinNodes = self.getSkinClusters(inputTransform)
-        inputSkinNodes = self.getSkinHistory(inputTransform)
-
-        targetSkinSettings = []
-
-        if intersectSceneWeights is not None:
-            inputSkinNodes = list(set(inputSkinNodes) - set(intersectSceneWeights))
-
-        if len(inputSkinNodes) == 0:
-            return []
-
-        for inputSkinNode in inputSkinNodes:
-            skinSettings = self.getSkinSettings(inputSkinNode)
-            skinSettings.shape = maya.cmds.listRelatives(inputTransform,
-                                                         s=True,
-                                                         fullPath=True)[0]
-
-            skinSettings.abcWeightsFile = self.saveWeights(inputSkinNode,
-                                                           targetDirectory,
-                                                           displayReport=displayReport)
-
-            skinSettings.processingTime = float(self.timeProcessing.timeRange)
-            skinSettings.report = self.timeProcessing.report
-
-            targetSkinSettings.append(skinSettings)
-
-        if skipZipArchive is False:
-            outputZip =  posixpath.join(targetDirectory, '{0}.zip'.format(inputTransform))
-
-            skinMetadata = {}
-            for component in targetSkinSettings:
-                jsonData = self.extractSettings(component)
-                skinMetadata[component.deformerName] = json.loads(jsonData)
-
-            jsonSkinFile, jsonSkinFileName = self.saveSettings(outputZip, 
-                                                               skinMetadata)
-
-            with zipfile.ZipFile(outputZip, 'w', compression=zipfile.ZIP_DEFLATED) as outputZip:
-                outputZip.write(jsonSkinFile, r'%s'%jsonSkinFileName)
-
-                for component in targetSkinSettings:
-                    zipName = os.path.basename(component.abcWeightsFile)
-                    outputZip.write(component.abcWeightsFile, r'%s'%zipName)
-
-            for component in targetSkinSettings:
-                os.remove(component.abcWeightsFile) 
-
-            os.remove(jsonSkinFile)
-
-        return targetSkinSettings
-
-    def exportAssetWeights(self,
-                           objectArray,
-                           targetArchiveFile,
-                           exposeWeightDetails=True,
-                           showProgressbar=True):
-        if len(objectArray) == 0:
-            return
-
-        batchProcessing = TimeProcessor()
-        batchProcessing.displayProgressbar = showProgressbar
-        batchProcessing.progressbarRange = len(objectArray)
-
-        sceneWeights = []
-
-        processingTime = 0
-        validComponent = 0
-        reportArray = []
-
-        targetDirectory = os.path.dirname(targetArchiveFile)
-        if not os.path.isdir(targetDirectory):
-            return
-
-        skinNames = []
-        with batchProcessing:
-            for component in objectArray:
-                targetSkinSettings = self.export(component,
-                                                 targetDirectory,
-                                                 skipZipArchive=True,
-                                                 displayReport=False,
-                                                 intersectSceneWeights=skinNames)
-                if len(targetSkinSettings) == 0:
-                    continue
-
-                for skinSettings in targetSkinSettings:
-                    skinNames.append(skinSettings.deformerName)
-
-                sceneWeights.append(targetSkinSettings)
-
-                for component in targetSkinSettings:
-                    processingTime += component.processingTime
-                    validComponent += 1
-                    reportArray.append(component.report)
-
-                if batchProcessing.displayProgressbar is True:
-                    batchProcessing.progressbar.advanceProgress(1)
-
-            batchProcessing.report = '\n<Batch Processing report :>' 
-            batchProcessing.report += '\n\t Saving {} elements took {} seconds\n'.format(validComponent,
-                                                                                processingTime)
-
-            if exposeWeightDetails is True:
-                for report in reportArray:
-                    batchProcessing.report += report.replace('\n', '\n\t\t')
-
-                    batchProcessing.report += '\n'
-
-        skinMetadata = {}
-        for targetSkinSettings in sceneWeights:
-            for component in targetSkinSettings:
-                jsonData = self.extractSettings(component)
-                skinMetadata[component.deformerName] = json.loads(jsonData)
-
-        jsonSkinFile, jsonSkinFileName = self.saveSettings(targetArchiveFile, 
-                                                           skinMetadata)
-
-        with zipfile.ZipFile(targetArchiveFile, 'w', compression=zipfile.ZIP_DEFLATED) as outputZip:
-            outputZip.write(jsonSkinFile, r'%s'%jsonSkinFileName)
-
-            for targetSkinSettings in sceneWeights:
-                for component in targetSkinSettings:
-                    zipName = os.path.basename(component.abcWeightsFile)
-                    outputZip.write(component.abcWeightsFile, r'%s'%zipName)
-
-        for targetSkinSettings in sceneWeights:
-            for component in targetSkinSettings:
-                os.remove(component.abcWeightsFile) 
-
-        os.remove(jsonSkinFile)
+        return outputSkins
 
     def validateGeometries(self, inputShapePath):
         isValidNode = maya.cmds.objExists(inputShapePath)
         return isValidNode
 
     def validateDeformer(self, inputDeformerName):
-        isValidSkinDeformer = False
-        skinComponents = maya.cmds.ls(inputDeformerName, typ='skinCluster')
+        skinComponents = maya.cmds.ls(inputDeformerName, 
+                                      type='skinCluster')
 
         if len(skinComponents)>0:
-            isValidSkinDeformer = True
+            return True
 
-        return isValidSkinDeformer
+        return False
 
-    def validateSkin(self, inputDeformerName, inputShapePath):
+    def validateSkin(self, 
+                     inputDeformerName, 
+                     inputShapePath):
         inputSkinNodes = self.getSkinHistory(inputShapePath)
 
-        if inputSkinNodes is None:
-            print inputDeformerName, inputShapePath
-            return False
+        if len(inputSkinNodes)==0:
+            return None
 
         if inputDeformerName in inputSkinNodes:
             return True
 
         return False
 
-    def validateInfluences(self, inputInfluenceArray):
-        jointReport = [True, []]
+    def validateInfluences(self, 
+                           inputInfluenceArray):
+        jointReport = JointReport()
 
         for influence in inputInfluenceArray:
             isValidNode = maya.cmds.objExists(influence)
 
-            if isValidNode is False:
-                jointReport[0] =  False, 
-                jointReport[1].append(influence)
+            if isValidNode is True:
+                continue
+
+            jointReport.canFindAllJoints = False 
+            jointReport.missingJoints.append(influence)
 
         return jointReport
 
-    def synchronizeDeformer(self, inputDeformer, inputInfluenceArray):
+    def synchronizeDeformer(self,
+                            inputDeformer, 
+                            inputInfluenceArray):
         currentInfluencesList = maya.cmds.skinCluster(inputDeformer, q=True, inf=True)
         rebuildSkinCluster = False
 
@@ -891,85 +575,1279 @@ class SkinIO(object):
 
         return rebuildSkinCluster
 
-    def rebuildSkinCluster(self):
+    def rebuildSkinCluster(self,
+                           skinSettings):
+        inputSkinCluster = maya.cmds.skinCluster(skinSettings.influences ,
+                                                 maya.cmds.listRelatives(skinSettings.shape, p=True),
+                                                 dr=4.5,
+                                                 skinMethod=0 ,
+                                                 toSelectedBones=True ,
+                                                 n=skinSettings.deformerName,
+                                                 maximumInfluences=1)[0]
+
+        self.removeAccessoryNodes(inputSkinCluster)
+
+        return inputSkinCluster
+
+    def removeAccessoryNodes(self,
+                             inputSkinCluster):
+        skinHistory = maya.cmds.listHistory(inputSkinCluster)
+        if skinHistory is None:
+            return
+
+        if len(skinHistory)==0:
+            return
+
+        skinHistory = list(set(skinHistory))
+        unwantedNodes = []
+
+        for nodeType in ('tweak',
+                         'dagPose'):
+            pruneNodes = maya.cmds.ls(skinHistory,
+                                      type=nodeType)
+
+            if pruneNodes is None:
+                continue
+ 
+            unwantedNodes.extend(pruneNodes)
+
+        if len(unwantedNodes)==0:
+            return
+
+        maya.cmds.delete(unwantedNodes)
+
+    def processInputSetting(self,
+                            skinSettings):
+        self.isInvalid = False
+
+        self.rebuildTime = 0
+
+        self.skinWasrebuilt = False
+
+        canFindShapeInScene = self.validateGeometries(skinSettings.shape)
+
+        if canFindShapeInScene is False:
+            report = 'Unable to find shape {}'.format(skinSettings.shape)
+            maya.OpenMaya.MGlobal.displayWarning(report)
+
+            self.isInvalid = True
+            return
+
+        jointReport = self.validateInfluences(skinSettings.influences)
+
+        if jointReport.canFindAllJoints is False:
+            for joint in jointReport.missingJoints:
+                report = 'Unable to find Influence {}'.format(jointReport)
+                maya.OpenMaya.MGlobal.displayWarning(report)
+
+            self.isInvalid = True
+            return
+
+        isSkinClusterDeformingCurrentShape = self.validateSkin(skinSettings.deformerName, 
+                                                               skinSettings.shape)
+
+        if isSkinClusterDeformingCurrentShape is None:
+            processing = TimeProcessor()
+            processing.displayProgressbar = False
+            processing.displayReport = False
+
+            with processing:
+                maya.cmds.namespace(setNamespace=self.rootNameSpace)
+
+                skinSettings.deformerName = self.rebuildSkinCluster(skinSettings)
+
+                maya.cmds.namespace(setNamespace=self.namespacePrefix)
+
+            self.rebuildTime = float(processing.timeRange)
+
+            self.skinWasrebuilt = True
+
+            return
+
+        if isSkinClusterDeformingCurrentShape is False:
+            report = 'Please insure {skin} actually deforms {shape}'
+            
+            report = report.format(skin=skinSettings.deformerName,
+                                   shape=skinSettings.shape)
+
+            maya.OpenMaya.MGlobal.displayWarning(report)
+
+            self.isInvalid = True
+            return
+
+        needsSkinClusterRebuilding = self.synchronizeDeformer(skinSettings.deformerName,
+                                                              skinSettings.influences)
+
+        if needsSkinClusterRebuilding is True:
+            processing = TimeProcessor()
+            processing.displayProgressbar = False
+            processing.displayReport = False
+
+            with processing:
+                maya.cmds.namespace(setNamespace=self.rootNameSpace)
+
+                skinSettings.deformerName = self.rebuildSkinCluster(skinSettings)
+
+                maya.cmds.namespace(setNamespace=self.namespacePrefix)
+
+            self.rebuildTime = float(processing.timeRange)
+
+            self.skinWasrebuilt = True
+
+
+class JointReport(object):
+    def __init__(self):
+        self.canFindAllJoints = True
+
+        missingJoints = []
+
+
+class SkinReport(object):
+    def __init__(self):
+        self.inputSkinNode = None
+
+    def collectInfos(self, 
+                     inputSkinNode):
+        jointArray = maya.cmds.skinCluster(inputSkinNode, 
+                                           q=True, 
+                                           inf=True)
+
+        geometry = maya.cmds.skinCluster(inputSkinNode, 
+                                         q=True, 
+                                         geometry=True)[0]
+        
+        return [len(jointArray), geometry]
+
+    def publishReport(self, 
+                      inputSkinNode, 
+                      targetSkinFile, 
+                      sampleLength):
+        metaData = self.collectInfos(inputSkinNode)
+        vertexCount = maya.cmds.polyEvaluate(metaData[1], v=True)
+
+        componentReport = '\n<Skin Weights Saving report:>' 
+        componentReport += '\n\tExport to {} was successful'.format(targetSkinFile) 
+        componentReport += '\n\tGeometry {0}'.format(metaData[1]) 
+        componentReport += '\n\t\tNumber of vertex {0}'.format(vertexCount)
+        componentReport += '\n\t\tNumber of influences {0}'.format(metaData[0]) 
+        componentReport += '\n\t\tNumber of weights Samples {0}'.format(sampleLength)
+
+        return componentReport
+
+    def publishImportReport(self, 
+                            shape, 
+                            inReport,
+                            sourceAbcFile,
+                            rebuildTime,
+                            skinWasrebuilt):
+        componentReport = '\n<Skin Weights Import report:>' 
+        componentReport += '\n\tLoading data from {} .'.format(os.path.basename(sourceAbcFile)) 
+        componentReport += '\n\tGeometry {0}'.format(shape) 
+
+        if skinWasrebuilt:
+            componentReport += '\n\tRebuilding skincluster took {0} seconds'.format(rebuildTime)
+
+        componentReport += '\t{0}'.format(inReport) 
+
+        return componentReport
+
+
+class ClusterIO(object):
+    def __init__(self):
+        self.weights = maya.OpenMaya.MDoubleArray()
+        self.indexArray = maya.OpenMaya.MIntArray()
+
+        self.joint = ''
+
+        #Possible values: cluster/All
+        self.setType = ''
+
+
+class SkinSet(object):
+    FIRST_ITEM = 0
+
+    def __init__(self, inputSkinCluster):
+        self.shapePath = maya.OpenMaya.MDagPath()
+        self.jointPaths = maya.OpenMaya.MDagPathArray()
+        self.skinFunctionUtils = None
+        self.pointComponentsUtils = None
+        self.fullComponentPointSet = None
+        self.componentType = None
+
+        self.pointCount = 0
+
+        self.shapeType = None
+
+        self.influenceIndices = None
+
+        self.oldValues = None
+
+        self.weightUtils = None
+
+        self.extractData(inputSkinCluster)
+
+    def getMObject(self, nodeName):
+        selList = maya.OpenMaya.MSelectionList()
+        maya.OpenMaya.MGlobal.getSelectionListByName(nodeName, 
+                                                     selList)
+        depNode = maya.OpenMaya.MObject()
+        selList.getDependNode(0, depNode) 
+
+        return depNode
+
+    def extractData(self, inputSkinCluster):
+        skinClusterApiObject = self.getMObject(inputSkinCluster)
+        self.skinFunctionUtils = maya.OpenMayaAnim.MFnSkinCluster(skinClusterApiObject)
+
+        self.skinFunctionUtils.influenceObjects(self.jointPaths)
+        self.skinFunctionUtils.getPathAtIndex(0, self.shapePath)
+
+    def getInfluenceIndices(self):
+        self.oldValues = maya.OpenMaya.MDoubleArray()
+
+        self.influenceIndices = maya.OpenMaya.MIntArray(self.jointPaths.length())
+
+        for jointIndex in xrange(self.jointPaths.length()):
+            self.influenceIndices.set(jointIndex,
+                                      jointIndex)
+
+    def getShapeFullComponents(self):
+        simpleShapeType = ['mesh', 'nurbsCurve']
+        
+        self.shapeType = maya.cmds.nodeType(self.shapePath.fullPathName())
+
+        if self.shapeType in simpleShapeType:
+            self.componentType = maya.OpenMaya.MFn.kMeshVertComponent
+
+            if self.shapeType == 'mesh':
+                shapeFunctionUtils = maya.OpenMaya.MFnMesh(self.shapePath)
+                self.pointCount = shapeFunctionUtils.numVertices()
+
+                pointComponentFunction = maya.OpenMaya.MFnSingleIndexedComponent()
+
+            elif self.shapeType == 'nurbsCurve':
+                shapeFunctionUtils = maya.OpenMaya.MFnNurbsCurve(self.shapePath)
+                self.pointCount = shapeFunctionUtils.numVertices()
+                self.componentType = OpenMaya.MFn.kCurveCVComponent
+
+            self.fullComponentPointSet = pointComponentFunction.create(self.componentType)
+            pointComponentFunction.setCompleteData(self.pointCount)
+
+        elif self.shapeType == 'nurbsSurface':
+            self.componentType = maya.OpenMaya.MFn.kSurfaceCVComponent
+            shapeFunctionUtils = maya.OpenMaya.MFnNurbsSurface(self.shapePath)
+
+            self.pointCount = shapeFunctionUtils.numCVsInU() * shapeFunctionUtils.numCVsInV()
+
+            pointComponentFunction = maya.OpenMaya.MFnDoubleIndexedComponent()
+            self.fullComponentPointSet = pointComponentFunction.create(self.componentType)
+
+            pointComponentFunction.setCompleteData(shapeFunctionUtils.numCVsInU(),
+                                                   shapeFunctionUtils.numCVsInV())
+
+        elif self.shapeType == 'lattice':
+            self.componentType = maya.OpenMaya.MFn.kLatticeComponent
+            shapeFunctionUtils = maya.OpenMaya.MFnLattice(self.shapePath)
+
+            sDivivision = 0
+            tDivivision = 0
+            uDivivision = 0
+
+            shapeFunctionUtils.getDivisions(sDivivision,
+                                            tDivivision,
+                                            uDivivision)
+
+            self.pointCount = sDivivision * tDivivision * uDivivision
+
+            pointComponentFunction = maya.OpenMaya.MFnTripleIndexedComponent()
+            self.fullComponentPointSet = pointComponentFunction.create(self.componentType)
+            
+            pointComponentFunction.setCompleteData(sDivivision,
+                                                   tDivivision,
+                                                   uDivivision)
+
+    def extractFromAlembic(self,
+                           sourceAlembic,
+                           abcNamespace):
+        maya.cmds.AbcImport(sourceAlembic, 
+                            mode='import')
+
+        importAbcArray = maya.cmds.namespaceInfo(abcNamespace,
+                                                 listNamespace=True)
+
+        if len(importAbcArray)==0:
+            anchorNode = importAbcArray[self.FIRST_ITEM]
+            abcNode = self.getMObject(importAbcArray[self.FIRST_ITEM])
+        else:
+            anchorNode = None
+            for node in importAbcArray:
+                if maya.cmds.nodeType(node) == 'transform':
+                    anchorNode = node
+
+            abcNode = self.getMObject(anchorNode)
+
+        skinAttribute = maya.cmds.listAttr(anchorNode,
+                                           ud=True)
+
+        dependNode = maya.OpenMaya.MFnDependencyNode(abcNode)
+
+        attributePlug = dependNode.findPlug(skinAttribute[self.FIRST_ITEM],
+                                            False)
+
+        self.weightUtils = maya.OpenMaya.MFnDoubleArrayData(attributePlug.asMObject())
+
+        maya.cmds.delete(anchorNode)
+
+
+class SkinSettings(object):
+    NODE_ATTRIBUTES = ('deformerName',
+                       'shape',
+                       'shapePath',
+                       'influences',
+                       'skinningMethod',
+                       'normalizeWeights',
+                       'abcWeightsFile')
+
+    def __init__(self, 
+                 skinDeformer,
+                 collectData=True):
+        self.deformerName = None
+        self.shape = None
+        self.shapePath = None
+        self.influences = []
+
+        self.skinningMethod = 0
+        self.normalizeWeights = False
+        self.abcWeightsFile = None
+
+        self.processingTime = 0
+        self.report = ''
+
+        if collectData is False:
+            return
+
+        self.skinDeformer = skinDeformer
+
+        self.getSkinSettings()
+
+    def getSkinSettings(self):
+        self.deformerName = self.skinDeformer
+        self.influences = maya.cmds.skinCluster(self.skinDeformer,
+                                                q=True,
+                                                inf=True)
+
+        self.skinningMethod = maya.cmds.getAttr('{}.skinningMethod'.format(self.skinDeformer))
+        self.normalizeWeights = maya.cmds.getAttr('{}.normalizeWeights'.format(self.skinDeformer))
+
+        self.shape = maya.cmds.skinCluster(self.skinDeformer,
+                                           q=True,
+                                           geometry=True)[0]
+
+    def toJson(self):
+        return json.dumps(self, 
+                          cls=ObjectEncoder, 
+                          indent=2, 
+                          sort_keys=True)
+
+    def fromJson(self,
+                 inputSkinSettings):
+        for key in inputSkinSettings:
+            if hasattr(self, key):
+                setattr(self, key, inputSkinSettings[key])
+
+    def __repr__(self):
+        reportData = '<{0}'.format(self.__class__.__name__)
+
+        for attribute in self.NODE_ATTRIBUTES:
+            reportData += '\n\t{0}: {1}'.format(attribute, 
+                                                getattr(self,attribute))
+
+        reportData += '>'
+        return reportData
+
+
+class ShapeSettings(object):
+    def __init__(self, shape):
+        self.shape = shape
+        self.shapePath = maya.OpenMaya.MDagPath()
+        self.transform = None
+        self.pointCount = 0
+        self.shapeType = ''
+
+        self.uCount = 0
+        self.vCount = 0
+        self.wCount = 0
+
+        self.getShapeSettings()
+
+    def getMObject(self, nodeName):
+        selList = maya.OpenMaya.MSelectionList()
+        maya.OpenMaya.MGlobal.getSelectionListByName(nodeName, 
+                                                     selList)
+        depNode = maya.OpenMaya.MObject()
+        selList.getDependNode(0, depNode) 
+
+        return depNode
+
+    def getShapeSettings(self):
+        self.transform = maya.cmds.listRelatives(self.shape, p=True)[0]
+        shapeApiObject = self.getMObject(self.shape)
+
+        maya.OpenMaya.MDagPath.getAPathTo(shapeApiObject,
+                                          self.shapePath)    
+
+        pointCount = 0
+        simpleShapeType = ['mesh', 'nurbsCurve']
+        self.shapeType = maya.cmds.nodeType(self.shape)
+
+        if self.shapeType in simpleShapeType:
+            componentType = maya.OpenMaya.MFn.kMeshVertComponent
+
+            if self.shapeType == 'mesh':
+                shapeFunctionUtils = maya.OpenMaya.MFnMesh(self.shapePath)
+                self.pointCount = shapeFunctionUtils.numVertices()
+
+            elif self.shapeType == 'nurbsCurve':
+                shapeFunctionUtils = maya.OpenMaya.MFnNurbsCurve(self.shapePath)
+                self.pointCount = shapeFunctionUtils.numVertices()
+
+            self.uCount = int(self.pointCount)
+
+        elif self.shapeType == 'nurbsSurface':
+            shapeFunctionUtils = maya.OpenMaya.MFnNurbsSurface(self.shapePath)
+
+            self.uCount = shapeFunctionUtils.numCVsInU()
+            self.wCount = shapeFunctionUtils.numCVsInV()
+
+            self.pointCount = shapeFunctionUtils.numCVsInU() * shapeFunctionUtils.numCVsInV()
+
+        elif self.shapeType == 'lattice':
+            componentType = maya.OpenMaya.MFn.kLatticeComponent
+            shapeFunctionUtils = maya.OpenMayaAnim.MFnLattice(self.shapePath)
+
+            sDivivisionParam = maya.OpenMaya.MScriptUtil()
+            sDivivisionParam.createFromInt(0)    
+            sDivivisionPtr = sDivivisionParam.asUintPtr()    
+
+            tDivivisionParam = maya.OpenMaya.MScriptUtil()
+            tDivivisionParam.createFromInt(0)    
+            tDivivisionPtr = tDivivisionParam.asUintPtr()  
+
+            uDivivisionParam = maya.OpenMaya.MScriptUtil()
+            uDivivisionParam.createFromInt(0)    
+            uDivivisionPtr = uDivivisionParam.asUintPtr()  
+
+            shapeFunctionUtils.getDivisions(sDivivisionPtr,
+                                            tDivivisionPtr,
+                                            uDivivisionPtr)
+
+            sDivivision = maya.OpenMaya.MScriptUtil(sDivivisionPtr).asInt()
+            tDivivision = maya.OpenMaya.MScriptUtil(tDivivisionPtr).asInt()
+            uDivivision = maya.OpenMaya.MScriptUtil(uDivivisionPtr).asInt()
+
+            self.uCount = sDivivision
+            self.vCount = tDivivision
+            self.wCount = uDivivision
+
+            self.pointCount = sDivivision * tDivivision * uDivivision
+
+    def getComponent(self, pointIndex):
+        simpleShapeType = ['mesh', 'nurbsCurve']
+        if self.shapeType in simpleShapeType:
+            return '{shape}.vtx[{pointIndex}]'.format(shape=self.transform,
+                                                      pointIndex=pointIndex)
+
+        elif self.shapeType == 'nurbsSurface':
+            targetRow = pointIndex / self.vCount
+            targetColumn = pointIndex - targetRow
+            return '{shape}.cv[{row1}][{row2}]'.format(shape=self.transform,
+                                                       row1=targetRow,
+                                                       row2=targetColumn)
+
+        elif self.shapeType == 'lattice':
+            heightRatio = (self.uCount*self.vCount)
+            targetHeight = pointIndex / heightRatio
+
+            heightLevel = heightRatio*targetHeight
+            rowLevel = (heightLevel - targetHeight)
+
+            #print targetHeight, heightRatio, heightLevel, rowLevel, pointIndex
+
+            targetRow = pointIndex / self.vCount
+            targetColumn = pointIndex - targetRow
+            return '{shape}.pt[{row1}][{row2}][{row3}]'.format(shape=self.transform,
+                                                               row1=targetColumn,
+                                                               row2=targetRow,
+                                                               row3=targetHeight)
+
+
+class PointWeights(object):
+    def __init__(self):
+        self.timeProcessing = TimeProcessor()
+
+    def importWeights(self, inputMesh):
         pass
 
-    def importWeights(self):
-        pass
+    def getWeights(self, 
+                   inputMesh, 
+                   skinSettings,
+                   shapeSettings):
+        for pointIndex in xrange(shapeSettings.pointCount):
+            component = self.getComponent(pointIndex, shapeSettings)
 
-    def loadSkinSettings(self, jsonArray):
-        influArray = []
-        for jsonData in jsonArray:
-            for skinSettings in jsonData.itervalues() :
-                canFindShapeInScene = self.validateGeometries(skinSettings['shape'])
+            rawWeights = maya.cmds.skinPercent(component,
+                                               skinSettings.skinDeformer,
+                                               q=True,
+                                               value=True)
 
-                if canFindShapeInScene is False:
-                    report = 'Unable to find shape {}'.format(skinSettings['shape'])
-                    maya.OpenMaya.MGlobal.displayWarning(report)
+            return {weightIndex:weight \
+                    for weightIndex, weight \
+                    in enumerate(rawWeights) if weight > 0.0}
 
+    def saveWeights(self,
+                    inputMesh, 
+                    targetDirectory):
+        targetFile = os.path.join(targetDirectory, '{0}.wgt'.format(inputMesh))
+
+        skinNode = maya.mel.eval('findRelatedSkinCluster {}'.format(inputMesh))
+        if skinNode is None:
+            return
+
+        skinSettings = SkinSettings(skinNode)
+        shapeSettings = ShapeSettings(skinSettings.shape)
+
+        with open(targetFile, 'w') as skinFile:
+            for pointIndex in xrange(shapeSettings.pointCount):
+                skinData = self.getWeights(inputMesh, 
+                                           skinSettings,
+                                           shapeSettings)
+
+                skinFile.write(skinData)
+
+
+class DataInjection(object):
+    TARGET_WEIGHT_PROPERTY = 'skinRepository'
+
+    WEIGHT_HOLDER_TYPE = 'joint'
+
+    WEIGHT_PROPERTY_TYPE = 'doubleArray'
+
+    WEIGHT_NAMESPACE = 'skinNamespace_weights'
+
+    def __init__(self):
+        self.timeProcessing = TimeProcessor()
+
+        self.batchProcessing = TimeProcessor()
+
+        self.processingTime = 0
+
+        self.reportArray = []
+
+        self.reporter = SkinReport()
+
+        self.skinNodeArray = []
+
+        self.sceneWeights = []
+
+        self.skinMetadata = {}
+
+        self.mayaFileType = "mayaAscii"
+
+    def getSkinNodeArray(self,
+                         objectArray):
+        self.skinNodeArray = []
+
+        for inputTransform in objectArray:
+            validationUtils = SkinValidator()
+            inputSkinNodes = validationUtils.getSkinHistory(inputTransform)
+
+            if len(inputSkinNodes) == 0:
+                continue
+
+            self.skinNodeArray.append(inputSkinNodes[0])
+
+    def saveSettings(self, 
+                     targetArchiveFile,
+                     unpackDirectory,
+                     outputSkinSettings):
+        jsonSkinFileExtention = os.path.splitext(targetArchiveFile)[1]
+
+        jsonSkinFileName = os.path.basename(targetArchiveFile).replace(jsonSkinFileExtention, '.json')
+        jsonSkinFile = posixpath.join(unpackDirectory,
+                                    jsonSkinFileName)
+
+        with open(jsonSkinFile, "w") as outfile:
+            json.dump(outputSkinSettings, outfile , indent=4)
+
+        return jsonSkinFile, jsonSkinFileName
+
+    def bundleSkinComponentsInArchiveFile(self,
+                                          sceneWeights,
+                                          jsonSkinFile,
+                                          jsonSkinFileName,
+                                          targetArchiveFile):
+        with zipfile.ZipFile(targetArchiveFile, 
+                             'wb', 
+                             compression=zipfile.ZIP_DEFLATED) as outputZip:
+            outputZip.write(jsonSkinFile, r'{0}'.format(jsonSkinFileName))
+
+            for component in sceneWeights:
+                zipName = os.path.basename(component.abcWeightsFile)
+                outputZip.write(component.abcWeightsFile, r'%s'%zipName)
+
+    def transferToDisk(self, 
+                       skin, 
+                       targetSkinFile):
+        self.timeProcessing.displayReport = False
+        with self.timeProcessing:
+            maya.cmds.select(skin, r=True)
+            maya.cmds.file(targetSkinFile,
+                           force=True, 
+                           typ=self.mayaFileType,
+                           es=True,
+                           ch=False,
+                           chn=False,
+                           con=False, 
+                           exp=False,
+                           sh=False)
+
+    def saveWeights(self,
+                    skin,
+                    targetSkinDirectory):
+        maya.cmds.select(skin, 
+                         r=True)
+
+        targetSkinFileName = '{0}_skinWeights.ma'.format(skin)
+
+        targetSkinFile = posixpath.join(targetSkinDirectory,
+                                        targetSkinFileName)
+
+        self.transferToDisk(skin, 
+                            targetSkinFile)
+
+        return targetSkinFile
+
+    def export(self,
+               inputTransform,
+               targetDirectory,
+               displayReport=True):
+        self.timeProcessing.report = ''
+
+        self.timeProcessing.processObjectCount = 0
+
+        validationUtils = SkinValidator()
+        inputSkinNodes = validationUtils.getSkinHistory(inputTransform)
+
+        if len(inputSkinNodes) == 0:
+            return None
+
+        skinSettings = None
+
+        skinSettings = SkinSettings(inputSkinNodes[0])
+        skinSettings.shape = maya.cmds.listRelatives(inputTransform,
+                                                     s=True,
+                                                     fullPath=True)[0]
+
+        return skinSettings
+
+    def collectSkinSettings(self,
+                            objectArray,
+                            unpackDirectory,
+                            exposeWeightDetails):
+        for component in objectArray:
+            targetSkinSettings = self.export(component,
+                                             unpackDirectory,
+                                             displayReport=False)
+
+            if targetSkinSettings is None:
+                continue
+
+            self.sceneWeights.append(targetSkinSettings)
+
+            self.processingTime += targetSkinSettings.processingTime
+
+            if self.batchProcessing.displayProgressbar is True:
+                self.batchProcessing.progressbar.advanceProgress(1)
+
+            if exposeWeightDetails is True:
+                if len(targetSkinSettings.report) ==0:
                     continue
 
-                canFindAllJoints = self.validateInfluences(skinSettings['influences'])
+                self.batchProcessing.report += targetSkinSettings.report.replace('\n', '\n\t\t')
 
-                if canFindAllJoints[0] is False:
-                    for jointReport in canFindAllJoints[1]:
-                        report = 'Unable to find Influence {}'.format(jointReport)
-                        maya.OpenMaya.MGlobal.displayWarning(report)
+                self.batchProcessing.report += '\n'
 
-                    continue
+            targetSkinSettings.report = ''
 
-                canFindSkinDeformerWithName = self.validateDeformer(skinSettings['deformerName'])
-                if canFindSkinDeformerWithName is False:
-                    report = 'Unable to find skinCluster {}'.format(skinSettings['deformerName'])
-                    maya.OpenMaya.MGlobal.displayWarning(report)
-                    continue
+            self.skinMetadata[targetSkinSettings.deformerName] = json.loads(targetSkinSettings.toJson())
 
-                needsSkinClusterRebuilding = self.synchronizeDeformer(skinSettings['deformerName'],
-                                                                      skinSettings['influences'])
+    def packageDistribution(self,
+                            targetSkinFile,
+                            unpackDirectory):
+        jsonSkinFile, jsonSkinFileName = self.saveSettings(targetSkinFile, 
+                                                           unpackDirectory,
+                                                           self.skinMetadata)
 
-                if needsSkinClusterRebuilding is True:
-                    self.rebuildSkinCluster()
+        self.bundleSkinComponentsInArchiveFile(self.sceneWeights,
+                                               jsonSkinFile,
+                                               jsonSkinFileName,
+                                               targetSkinFile)
 
-                isSkinClusterDeformingCurrentShape = self.validateSkin(skinSettings['deformerName'], 
-                                                                       skinSettings['shape'])
+    def resetManager(self,
+                     showProgressbar,
+                     objectCount,
+                     exposeWeightDetails):
+        self.batchProcessing = TimeProcessor()
+        self.batchProcessing.displayProgressbar = showProgressbar
 
-                if isSkinClusterDeformingCurrentShape is False:
-                    report = 'Please insure {skin} actually deforms {shape}'
-                    
-                    report = report.format(skin=skinSettings['deformerName'],
-                                           shape=skinSettings['shape'])
+        self.batchProcessing.progressbarRange = objectCount
+        self.batchProcessing.displayReport = exposeWeightDetails
 
-                    maya.OpenMaya.MGlobal.displayWarning(report)
+        self.batchProcessing.report = '\n<@{0}: Batch Processing report :>'.format(self.__class__.__name__) 
 
-                    continue
+        self.sceneWeights = []
 
-                influArray.extend(skinSettings['influences'])
+        self.skinMetadata = {}
 
-        return list(set(influArray))
+    def collectAdditionalData(self, *args):
+        self.batchProcessing.report += '\n\t Saving {} elements took {} seconds\n'.format(len(self.sceneWeights),
+                                                                                          self.processingTime)
 
-    def importAssetWeights(self, sourceArchiveFile):
+    def exportAssetWeights(self,
+                           objectArray,
+                           targetSkinFile,
+                           exposeWeightDetails=True,
+                           showProgressbar=True):
+        if len(objectArray) == 0:
+            return 'Object array is empty'
+
+        targetDirectory = os.path.dirname(targetSkinFile)
+ 
+        if not os.path.isdir(targetDirectory):
+            return 'targetDirectory doesnt exists'
+
+        self.resetManager(showProgressbar,
+                          len(objectArray),
+                          exposeWeightDetails)
+
+        self.getSkinNodeArray(objectArray)
+
+        pathSuffix = str(uuid.uuid1()).replace('-', '')
+        neighbourFolder = posixpath.join(targetDirectory, 
+                                         pathSuffix[0:len(pathSuffix)/4])
+
+        if len(self.skinNodeArray) == 0:
+            return 0.0
+
+        with SelectionSaved(), TemporaryDirectory(dir=neighbourFolder) as unpackDirectory:
+            with self.batchProcessing:
+                self.collectSkinSettings(objectArray,
+                                         unpackDirectory,
+                                         exposeWeightDetails)
+    
+                self.collectAdditionalData(unpackDirectory)
+
+            self.packageDistribution(targetSkinFile,
+                                     unpackDirectory)
+
+        return float(self.batchProcessing.timeRange)
+
+
+class AsciiInjection(DataInjection):
+    def __init__(self):
+        super(AsciiInjection, self).__init__()
+
+        self.mayaFileType = "mayaAscii"
+
+    def importWeight(self, 
+                     inputFile, 
+                     archive, 
+                     inputSkin):
+        self.consolidateFile(archive, inputFile, inputSkin)
+        #maya.cmds.select(inputSkin, r=True)
+        maya.cmds.file("C:/Users/cedric/Desktop/skinIO/UU2.ma",
+                       i=True, 
+                       type="mayaAscii")
+                           
+    def importWeights(self,
+                      sourceArchiveFile):
         if not os.path.exists(sourceArchiveFile):
             return
 
-        jsonList = []
         jsonArray = []
-
         with zipfile.ZipFile(sourceArchiveFile, 'r') as archive:
             jsonList = [info.filename for info in archive.infolist() 
                         if info.filename.endswith('.json')]
 
             jsonArray = [json.loads(archive.read(jsonElement)) for jsonElement in jsonList]
 
+        if len(jsonArray) == 0:
+            return
+
+        jsonSettings = jsonArray[0]
+    
+        with zipfile.ZipFile(sourceArchiveFile, 'r') as archive:
+            with self.timeProcessing:
+                for skin in jsonSettings :
+                    inputFile = os.path.basename(skin)
+                    inputSkin = jsonSettings[skin][0]
+
+                    self.importWeight(inputFile, archive, inputSkin)
+
+    def export(self,
+               inputTransform,
+               targetDirectory,
+               displayReport=False):
+        skinSettings = super(AsciiInjection,
+                             self).export(inputTransform,
+                                          targetDirectory,
+                                          displayReport=False)
+
+        if skinSettings is None:
+            return None
+
+        skinSettings.abcWeightsFile = self.saveWeights(skinSettings.skinDeformer,
+                                                       targetDirectory)
+
+        skinSettings.processingTime = float(self.timeProcessing.timeRange)
+
+        skinSettings.report = self.reporter.publishReport(skinSettings.skinDeformer, 
+                                                          skinSettings.abcWeightsFile,
+                                                          None)
+
+        return skinSettings
+
+
+class BinaryInjection(DataInjection):
+    def __init__(self):
+        super(BinaryInjection, self).__init__()
+
+        self.mayaFileType = "mayaBinary"
+
+    def export(self,
+               inputTransform,
+               targetDirectory,
+               displayReport=False):
+        skinSettings = super(BinaryInjection, self).export(inputTransform,
+                                                           targetDirectory,
+                                                           displayReport=False)
+
+        if skinSettings is None:
+            return None
+
+        skinSettings.abcWeightsFile = ''
+
+        skinSettings.processingTime = float(self.timeProcessing.timeRange)
+
+        skinSettings.report = self.timeProcessing.report
+
+        return skinSettings
+
+    def collectAdditionalData(self,
+                              unpackDirectory):
+        skinSettings = SkinSettings(None,
+                                    collectData=False)
+
+        skinSettings.abcWeightsFile = posixpath.join(unpackDirectory,
+                                                     'BinaryInjection_skinweight.mb')
+
+        self.transferToDisk(self.skinNodeArray, 
+                            skinSettings.abcWeightsFile)
+
+        self.sceneWeights = [skinSettings]
+
+        report = self.timeProcessing.report.replace('\n', '\n\t')
+
+        report += '\n'
+        report += "\n\t<End of BinaryExtraction>"
+
+        self.batchProcessing.report += report
+        self.batchProcessing.report += '\n\t Saving {} elements took {} seconds\n'.format(len(self.skinNodeArray),
+                                                                                          float(self.timeProcessing.timeRange))
+
+    def importWeights(self, 
+                      targetSkinFile,
+                      skinNodeArray=None,
+                      namespacePrefix="skinNamespace_weights"):
+        with self.timeProcessing, TemporaryNamespace(None,
+                                                     namespacePrefix,
+                                                     targetSkinFile,
+                                                     fileType="mayaBinary"):
+            importSkinNodeArray = maya.cmds.namespaceInfo(namespacePrefix, 
+                                                          listOnlyDependencyNodes=True)
+
+            if skinNodeArray is None:
+                skinNodeArray = [skin.replace(namespacePrefix+':', '')
+                                 for skin in importSkinNodeArray 
+                                 if maya.cmds.objExists(skin.replace(namespacePrefix+':', '')) is True \
+                                 and maya.cmds.nodeType(skin) == 'skinCluster']
+
+            for skin in skinNodeArray:
+                maya.cmds.nodeCast(skin, namespacePrefix+':' + skin, 
+                                   disconnectUnmatchedAttrs=True,
+                                   swapNames=True )
+
+            report = "\n\t<BinaryInjection Report \Import {0} elements>"
+            self.timeProcessing.report = report.format(len(skinNodeArray))
+
+
+class AlembicInjection(DataInjection):
+    def __init__(self):
+        self.weightFunctionUtils = maya.OpenMaya.MFnDoubleArrayData()
+
+        self.sourceAlembic = None
+
+        super(AlembicInjection, self).__init__()
+
+    def getMObject(self, nodeName):
+        selList = maya.OpenMaya.MSelectionList()
+        maya.OpenMaya.MGlobal.getSelectionListByName(nodeName, 
+                                                     selList)
+        depNode = maya.OpenMaya.MObject()
+        selList.getDependNode(0, depNode) 
+
+        return depNode
+
+    def collectSkinWeights(self, 
+                           inputSkinCluster):
+        skinInput = SkinSet(inputSkinCluster)
+        skinInput.getShapeFullComponents()
+
+        skinData = ClusterIO()
+        skinData.setType = 'All'
+        skinData.joint = self.TARGET_WEIGHT_PROPERTY
+
+        intptrUtil = maya.OpenMaya.MScriptUtil() 
+        intptrUtil.createFromInt(0)
+        intPtr = intptrUtil.asUintPtr()
+
+        skinInput.skinFunctionUtils.getWeights(skinInput.shapePath,
+                                               skinInput.fullComponentPointSet,
+                                               skinData.weights,
+                                               intPtr)
+
+        return skinData
+
+    def tranferWeightToAttribute(self, 
+                                 skinWeightsHolder,
+                                 inputSkinData):
+        weightWriter = maya.OpenMaya.MDGModifier()
+
+        targetAttribute = '{}_weights'.format(inputSkinData.joint)
+        maya.cmds.addAttr(skinWeightsHolder, 
+                          ln=targetAttribute,
+                          dt=self.WEIGHT_PROPERTY_TYPE)
+
+        skinWeightsHolderApiObject = self.getMObject(skinWeightsHolder)
+        nodeFunctionUtils = maya.OpenMaya.MFnDependencyNode(skinWeightsHolderApiObject)
+
+        skinWeightsApiPlug = nodeFunctionUtils.findPlug(targetAttribute,
+                                                        False)
+
+        skinDataApiObject = self.weightFunctionUtils.create(inputSkinData.weights)
+
+        weightWriter.newPlugValue(skinWeightsApiPlug,
+                                  skinDataApiObject)
+  
+        weightWriter.doIt()
+
+        return targetAttribute
+
+    def saveToDisk(self,
+                   skinWeightsHolder,
+                   skinWeight,
+                   targetSkinFile):
+        targetAttribute = self.tranferWeightToAttribute(skinWeightsHolder,
+                                                        skinWeight)
+
+        exportCommand = " -root |{node} -u {attribute} -file {targetFile}"
+        exportCommand = exportCommand.format(node=skinWeightsHolder,
+                                             attribute=targetAttribute,
+                                             targetFile=targetSkinFile)
+
+        maya.cmds.AbcExport(j=exportCommand)
+
+    def saveWeights(self, 
+                    inputSkinNode,
+                    targetSkinDirectory,
+                    displayReport=False):
+        targetSkinFile = posixpath.join(targetSkinDirectory,
+                                        '{0}.abc'.format(inputSkinNode))
+
+        self.timeProcessing.displayReport = displayReport
+        self.timeProcessing.report = ''
+
+        with self.timeProcessing:
+            skinWeightsHolder = maya.cmds.createNode(self.WEIGHT_HOLDER_TYPE)
+            self.timeProcessing.cleanupNodes.append(skinWeightsHolder)
+
+            skinWeight = self.collectSkinWeights(inputSkinNode)
+
+            self.saveToDisk(skinWeightsHolder, 
+                            skinWeight, 
+                            targetSkinFile)
+
+            self.timeProcessing.report = self.reporter.publishReport(inputSkinNode, 
+                                                                     targetSkinFile,
+                                                                     skinWeight.weights.length())
+
+        return targetSkinFile
+
+    def export(self,
+               inputTransform,
+               targetDirectory,
+               displayReport=True):
+        skinSettings = super(AlembicInjection, self).export(inputTransform,
+                                                            targetDirectory)
+
+        if skinSettings is None:
+            return None
+
+        skinSettings.abcWeightsFile = self.saveWeights(skinSettings.skinDeformer,
+                                                       targetDirectory)
+
+        skinSettings.processingTime = float(self.timeProcessing.timeRange)
+
+        skinSettings.report = self.timeProcessing.report
+
+        return skinSettings
+
+    def importWeights(self,
+                      skinSettings,
+                      unpackDirectory):
+        self.sourceAlembic = os.path.join(unpackDirectory,
+                                     os.path.basename(skinSettings.abcWeightsFile))
+
+        self.sourceAlembic = self.sourceAlembic.replace("\\", "/")
+
+        self.timeProcessing.displayReport = False
+        self.timeProcessing.report = ''
+
+        with self.timeProcessing:
+            self.loadFromDisk(skinSettings.deformerName,
+                              self.sourceAlembic)
+
+    def loadFromDisk(self,
+                     currentSkinCluster,
+                     sourceAlembic):
+        skinData = SkinSet(currentSkinCluster)
+
+        skinData.getShapeFullComponents()
+
+        skinData.getInfluenceIndices()
+
+        skinData.extractFromAlembic(sourceAlembic,
+                                    "skinNamespace_weights")
+
+        with SkinDisabled(currentSkinCluster):
+            skinData.skinFunctionUtils.setWeights(skinData.shapePath,
+                                                  skinData.fullComponentPointSet,
+                                                  skinData.influenceIndices,
+                                                  skinData.weightUtils.array(),
+                                                  False,
+                                                  skinData.oldValues) 
+
+
+class SkinIO(object):
+    TARGET_WEIGHT_PROPERTY = 'skinRepository'
+    WEIGHT_HOLDER_TYPE = 'joint'
+    WEIGHT_PROPERTY_TYPE = 'doubleArray'
+
+    WEIGHT_NAMESPACE = 'skinNamespace_weights'
+
+    SKIN_PROCESSING_METHOD = ('alembicIO',
+                              'mayaBinary',
+                              'mayaAscii')
+
+    def __init__(self):
+        self.timeProcessing = TimeProcessor()
+
+        self.reporter = SkinReport()
+
+        self.skinProcessor = None
+
+        self.skinHandler = 'alembicIO'
+
+        self.reportArray = []
+
+        self.processingTime = 0
+
+    def importFromAlembic(self, 
+                          jsonDataArray,
+                          unpackDirectory,
+                          batchProcessing):
+        self.skinProcessor = AlembicInjection()
+
+        validationUtils = SkinValidator()
+
+        validationUtils.rootNameSpace = maya.cmds.namespaceInfo(currentNamespace=True)
+
+        validationUtils.namespacePrefix = self.WEIGHT_NAMESPACE
+
+        with TemporaryNamespace(validationUtils.rootNameSpace,
+                                validationUtils.namespacePrefix):
+
+            self.timeProcessing.displayReport = False
+            self.timeProcessing.report = ''
+
+            for skinSettings in jsonDataArray:
+                validationUtils.processInputSetting(skinSettings)
+
+                if validationUtils.isInvalid:
+                    continue
+
+                batchProcessing.processObjectCount += 1
+
+                self.skinProcessor.importWeights(skinSettings,
+                                                 unpackDirectory)
+
+                self.reportArray.append(self.reporter.publishImportReport(skinSettings.shape, 
+                                                                          self.skinProcessor.timeProcessing.report,
+                                                                          self.skinProcessor.sourceAlembic,
+                                                                          validationUtils.rebuildTime,
+                                                                          validationUtils.skinWasrebuilt))
+
+                batchProcessing.progressbar.advanceProgress(1)
+
+    def importFromMayaBinary(self, 
+                             jsonData,
+                             unpackDirectory,
+                             batchProcessing):
+        self.skinProcessor = BinaryInjection()
+
+        validationUtils = SkinValidator()
+
+        validationUtils.rootNameSpace = maya.cmds.namespaceInfo(currentNamespace=True)
+
+        validationUtils.namespacePrefix = self.WEIGHT_NAMESPACE
+
+        skinNodeArray = []
+
+        batchProcessing.displayProgressbar = False
+
+        for skinSettings in jsonData.itervalues() :
+            validationUtils.processInputSetting(skinSettings)
+
+            if validationUtils.isInvalid:
+                continue
+
+            batchProcessing.processObjectCount += 1
+
+            skinNodeArray.append[skinSettings.deformerName]
+
+        targetSkinFile = None
+        self.skinProcessor.importWeights(targetSkinFile,
+                                         skinNodeArray=skinNodeArray,
+                                         namespacePrefix=self.WEIGHT_NAMESPACE)
+
+    def importWeights(self, 
+                      jsonData,
+                      unpackDirectory,
+                      batchProcessing):
+        self.reportArray = []
+
+        if self.skinHandler == 'alembicIO':
+            self.importFromAlembic(jsonData,
+                                   unpackDirectory,
+                                   batchProcessing)
+
+        elif self.skinHandler == 'mayaBinary':
+            self.importFromMayaBinary(jsonData,
+                                      unpackDirectory,
+                                      batchProcessing)
+
+        elif self.skinHandler == 'mayaAscii':
+            pass
+
+        for report in self.reportArray:
+            self.timeProcessing.report += report.replace('\n', '\n\t\t')
+
+            self.timeProcessing.report += '\n'
+
+    def parseJsonFromArchive(self,
+                             sourceArchiveFile):
+        with zipfile.ZipFile(sourceArchiveFile, 'r') as archive:
+            jsonList = [info.filename for info in archive.infolist() 
+                        if info.filename.endswith('.json')]
+
+            jsonInput = [json.loads(archive.read(jsonElement)) for jsonElement in jsonList][0]
+
+        jsonArray = []
+        for jsonData in jsonInput:
+            skinData = SkinSettings(None,
+                                    collectData=False)
+
+            skinData.fromJson(jsonInput[jsonData])
+
+            jsonArray.append(skinData)
+
+        return jsonArray
+
+    def importAssetWeights(self, 
+                           sourceArchiveFile,
+                           exposeWeightDetails=True,
+                           showProgressbar=True):
+        if not os.path.exists(sourceArchiveFile):
+            return
+
+        jsonSettings = self.parseJsonFromArchive(sourceArchiveFile)
+
         batchProcessing = TimeProcessor()
-        tt = []
+        batchProcessing.displayProgressbar = showProgressbar
+        batchProcessing.displayReport = False
+        batchProcessing.progressbarRange = len(jsonSettings)
+
         with batchProcessing:
-            tt = self.loadSkinSettings(jsonArray)
-
-        return tt
-
-        with TemporaryDirectory() as unpackDirectory:
-            with zipfile.ZipFile(sourceArchiveFile, 'r') as archive:
+            with TemporaryDirectory() as unpackDirectory, \
+            zipfile.ZipFile(sourceArchiveFile, 'r') as archive:
                 archive.extractall(unpackDirectory)
+                batchProcessing.report = '\n<Batch Processing report :>' 
 
-                with batchProcessing:
-                    self.loadSkinSettings(jsonArray)
+                self.importWeights(jsonSettings,
+                                   unpackDirectory,
+                                   batchProcessing)
+
+                batchProcessing.report += self.timeProcessing.report
+
+                batchProcessing.report += '\n<Successfully processed {} components>'.format(batchProcessing.processObjectCount) 
+
+        if exposeWeightDetails is True:
+            print batchProcessing.report
+
+        return float(batchProcessing.timeRange)
+
+    def exportAssetWeights(self,
+                           objectArray,
+                           targetArchiveFile,
+                           exposeWeightDetails=True,
+                           showProgressbar=True):
+        if len(objectArray) == 0:
+            return
+
+        if objectArray is None:
+            return
+
+        self.processingTime = 0
+
+        self.reportArray = []
+
+        if self.skinHandler == 'alembicIO':
+            self.skinProcessor = AlembicInjection()
+
+            return self.skinProcessor.exportAssetWeights(objectArray,
+                                                         targetArchiveFile,
+                                                         exposeWeightDetails=exposeWeightDetails)
+
+        if self.skinHandler == 'mayaBinary':
+            self.skinProcessor = BinaryInjection()
+
+            return self.skinProcessor.exportAssetWeights(objectArray,
+                                                         targetArchiveFile,
+                                                         exposeWeightDetails=exposeWeightDetails)
+
+        if self.skinHandler == 'mayaAscii':
+            self.skinProcessor = AsciiInjection()
+
+            return self.skinProcessor.exportAssetWeights(objectArray,
+                                                         targetArchiveFile,
+                                                         exposeWeightDetails=exposeWeightDetails)
