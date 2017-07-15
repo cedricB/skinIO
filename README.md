@@ -1,5 +1,4 @@
 # skinIO
-Skin file for autodesk maya and scripts to compare skin weights saveing/loading methods
-skinDeformerExporter.py is a slightly touch up version of Chris Evans http://www.chrisevans3d.com/files/deformerWeights.zip file which was missing some import statements and is used for comparison.
+Skin Weights module for autodesk maya . Written as a teaching material to compare skin weights saving/loading methods on all type of shape
 
 More informations can be found at https://circecharacterworks.wordpress.com/2016/10/06/chronicles-of-cedrick-escape-from-pymel-bay/
