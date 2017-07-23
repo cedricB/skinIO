@@ -33,6 +33,9 @@ import shutil
 
 
 class SelectionSaved(object):
+    """
+        Python context which will restore the current selection of object
+    """
     def __init__(self):
         self.currentSelection = []
 
@@ -51,6 +54,9 @@ class SelectionSaved(object):
 
 
 class SkinDisabled(object):
+    """
+        Python context used for skinweight IO
+    """
     ENABLE_VALUE = 1.0
 
     DISABLE_VALUE = 0.0
@@ -114,6 +120,9 @@ class SkinDisabled(object):
 
 
 class TimeProcessor(object):
+    """
+        Time stamping utility context
+    """
     def __init__(self):
         self.startTime = 0.0
         self.endTime = 0.0
@@ -164,6 +173,10 @@ class TimeProcessor(object):
 
 
 class TemporaryNamespace(object):
+    """
+        namespace utility use to isoled imported object with 
+        namespace and clean it up once processing is done
+    """
     def __init__(self,
                  rootNameSpace,
                  namespacePrefix,
@@ -206,6 +219,9 @@ class TemporaryNamespace(object):
 
 
 class TemporaryDirectory(object):
+    """
+        Temporary directory used for compressing/decompressing archive elements
+    """
     def __init__(self, 
                  suffix="", 
                  prefix="tmp", 

@@ -38,12 +38,19 @@ import time
 import shutil
 import uuid
 import zipfile
+import getpass
+import datetime
 
 
 class ObjectEncoder(json.JSONEncoder):
     def default(self, inputObject):
         if hasattr(inputObject, "to_json"):
-            return self.default(inputObject.to_json())
+            jsonDict = inputObject.to_json()
+
+            if 'NODE_ATTRIBUTES' in jsonDict:
+                jsonDict.pop('NODE_ATTRIBUTES')
+
+            return self.default(jsonDict)
         elif hasattr(inputObject, "__dict__"):
             jsonDict = dict(
                             (key, value)
@@ -58,6 +65,9 @@ class ObjectEncoder(json.JSONEncoder):
                             and not inspect.ismethoddescriptor(value)
                             and not inspect.isroutine(value)
                             )
+            if 'NODE_ATTRIBUTES' in jsonDict:
+                jsonDict.pop('NODE_ATTRIBUTES')
+
             return self.default(jsonDict)
         return inputObject
 
@@ -207,6 +217,61 @@ class SkinSet(object):
         self.weightUtils = maya.OpenMaya.MFnDoubleArrayData(attributePlug.asMObject())
 
         maya.cmds.delete(anchorNode)
+
+    def extractEmptyWeights(self):
+        self.weightUtils = OpenMaya.MDoubleArray(self.pointCount, 0.0)
+
+class InjectionSettings(object):
+    def __init__(self,
+                 weightMode,
+                 fillStructure=True):
+        self.weightMode = ''
+
+        self.assetScene = ''
+
+        self.userName = ''
+
+        self.saveTime = ''
+
+        self.collect(weightMode)
+
+    def collect(self,
+                weightMode):
+        self.weightMode = weightMode
+
+        self.assetScene = maya.cmds.file(q=True,
+                                         sceneName=True)
+
+        self.userName = getpass.getuser()
+
+        self.saveTime = str(datetime.datetime.now())
+
+    def parseJsonFromArchive(self,
+                             sourceArchiveFile):
+        if not os.path.exists(sourceArchiveFile):
+            return False
+
+        with zipfile.ZipFile(sourceArchiveFile, 'r') as archive:
+            jsonList = [info.filename for info in archive.infolist() 
+                        if info.filename.endswith('.mod')]
+
+            jsonInput = [json.loads(archive.read(jsonElement)) for jsonElement in jsonList][0]
+
+            self.fromJson(jsonInput)
+
+        return True
+
+    def toJson(self):
+        return json.dumps(self, 
+                          cls=ObjectEncoder, 
+                          indent=2, 
+                          sort_keys=True)
+
+    def fromJson(self,
+                 inputSettings):
+        for key in inputSettings:
+            if hasattr(self, key):
+                setattr(self, key, inputSettings[key])
 
 
 class SkinSettings(object):

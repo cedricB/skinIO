@@ -41,15 +41,15 @@ import uuid
 import zipfile
 
 
-from skinIO import context
-from skinIO import settings
-from skinIO import validation
+from skinIO.core import context
+from skinIO.core import settings
+from skinIO.core import validation
 
 reload(context)
 reload(settings)
 reload(validation)
 
-__version__ = '0.38.6'
+__version__ = '0.38.9'
 
 
 class Omphallos(object):
@@ -300,9 +300,16 @@ class DataInjection(object):
 
         self.sceneWeights = []
 
+        self.jsonArray = []
+
         self.skinMetadata = {}
 
+        self.validationUtils = None
+
         self.mayaFileType = "mayaAscii"
+
+        self.injectionSettings = settings.InjectionSettings(None,
+                                                            False)
 
     def getSkinNodeArray(self,
                          objectArray):
@@ -343,7 +350,7 @@ class DataInjection(object):
 
         jsonSkinFileName = os.path.basename(targetArchiveFile).replace(jsonSkinFileExtention, '.json')
         jsonSkinFile = posixpath.join(unpackDirectory,
-                                    jsonSkinFileName)
+                                      jsonSkinFileName)
 
         with open(jsonSkinFile, "w") as outfile:
             json.dump(outputSkinSettings, outfile , indent=4)
@@ -354,7 +361,8 @@ class DataInjection(object):
                                           sceneWeights,
                                           jsonSkinFile,
                                           jsonSkinFileName,
-                                          targetArchiveFile):
+                                          targetArchiveFile,
+                                          unpackDirectory):
         """
             Bind together skin data and their json skin settings
             into an output zip archive.
@@ -371,9 +379,21 @@ class DataInjection(object):
             returns:
                 jsonSkinFile, jsonSkinFileName (file path(string))
         """
+        jsonSkinFileExtention = os.path.splitext(targetArchiveFile)[1]
+        injectionData = settings.InjectionSettings(self.mayaFileType)
+
+        jsonModFileName = os.path.basename(targetArchiveFile).replace(jsonSkinFileExtention, '.mod')
+        jsonModFile = posixpath.join(unpackDirectory,
+                                     jsonModFileName)
+
+        with open(jsonModFile, "w") as outfile:
+            json.dump(json.loads(injectionData.toJson()), outfile , indent=4)
+
         with zipfile.ZipFile(targetArchiveFile, 
                              'w', 
                              compression=zipfile.ZIP_DEFLATED) as outputZip:
+            outputZip.write(jsonModFile, r'{0}'.format(jsonModFileName))
+
             outputZip.write(jsonSkinFile, r'{0}'.format(jsonSkinFileName))
 
             for component in sceneWeights:
@@ -510,6 +530,14 @@ class DataInjection(object):
     def packageDistribution(self,
                             targetSkinFile,
                             unpackDirectory):
+        """
+            Store skin Settings and skin Data onto the same archive.
+
+            args:
+                targetSkinFile(string):Archive file path.
+
+                unpackDirectory(string):directory path for the exported data.
+        """
         jsonSkinFile, jsonSkinFileName = self.saveSettings(targetSkinFile, 
                                                            unpackDirectory,
                                                            self.skinMetadata)
@@ -517,12 +545,23 @@ class DataInjection(object):
         self.bundleSkinComponentsInArchiveFile(self.sceneWeights,
                                                jsonSkinFile,
                                                jsonSkinFileName,
-                                               targetSkinFile)
+                                               targetSkinFile,
+                                               unpackDirectory)
 
     def resetManager(self,
                      showProgressbar,
                      objectCount,
                      exposeWeightDetails):
+        """
+            Reset Instance properties and utilities functions.
+
+            args:
+                showProgressbar(bool).
+
+                objectCount(int): (used to defined progressbar range)
+
+                exposeWeightDetails(bool): allows time and additional report at the and of computation.
+        """
         self.batchProcessing = context.TimeProcessor()
         self.batchProcessing.displayProgressbar = showProgressbar
 
@@ -536,6 +575,9 @@ class DataInjection(object):
         self.skinMetadata = {}
 
     def collectAdditionalData(self, *args):
+        """
+            Utility function used in instance.
+        """
         self.batchProcessing.report += '\n\t Saving {} elements took {} seconds\n'.format(len(self.sceneWeights),
                                                                                           self.processingTime)
 
@@ -544,6 +586,15 @@ class DataInjection(object):
                            targetSkinFile,
                            exposeWeightDetails=True,
                            showProgressbar=True):
+        """
+            Entry function to save skiweights of provided object list.
+
+            objectArray(list of transform names influenced by a skincluster).
+
+            targetSkinFile(string):file path for the exported data.
+
+            showProgressbar(bool).
+        """
         if len(objectArray) == 0:
             return 'Object array is empty'
 
@@ -578,47 +629,87 @@ class DataInjection(object):
 
         return float(self.batchProcessing.timeRange)
 
+    def parseJsonFromArchive(self,
+                             sourceArchiveFile):
+        if not os.path.exists(sourceArchiveFile):
+            return False
+
+        with zipfile.ZipFile(sourceArchiveFile, 'r') as archive:
+            jsonList = [info.filename for info in archive.infolist() 
+                        if info.filename.endswith('.json')]
+
+            jsonInput = [json.loads(archive.read(jsonElement)) for jsonElement in jsonList][0]
+
+        self.jsonArray = []
+
+        for jsonData in jsonInput:
+            skinData = settings.SkinSettings(None,
+                                             collectData=False)
+
+            skinData.fromJson(jsonInput[jsonData])
+
+            self.jsonArray.append(skinData)
+
+        return True
+
+    def processArchive(self, 
+                       sourceArchiveFile):
+        if not self.injectionSettings.parseJsonFromArchive(sourceArchiveFile):
+            return False
+
+        return True
+
+    def importAssetWeights(self, 
+                           sourceArchiveFile,
+                           exposeWeightDetails=True,
+                           showProgressbar=True):
+        if not self.parseJsonFromArchive(sourceArchiveFile):
+            return False
+
+        self.batchProcessing.displayProgressbar = showProgressbar
+        self.batchProcessing.displayReport = exposeWeightDetails
+        self.batchProcessing.progressbarRange = len(self.jsonArray)
+
+        with self.batchProcessing:
+            with context.TemporaryDirectory() as unpackDirectory, \
+            zipfile.ZipFile(sourceArchiveFile, 'r') as archive:
+                archive.extractall(unpackDirectory)
+                self.batchProcessing.report = '\n<Batch Processing report :>' 
+
+                self.processWeights(unpackDirectory)
+
+                self.batchProcessing.report += self.timeProcessing.report.replace('\n', '\n\t')
+
+                self.batchProcessing.report += '\n\t<Successfully processed {} components>'.format(self.batchProcessing.processObjectCount) 
+
+        return float(self.batchProcessing.timeRange)
+
+    def processWeights(self,
+                      unpackDirectory):
+        self.validationUtils = validation.SkinValidator()
+
+        self.validationUtils.rootNameSpace = maya.cmds.namespaceInfo(currentNamespace=True)
+
+        self.validationUtils.namespacePrefix = self.WEIGHT_NAMESPACE
+
+        self.skinNodeArray = []
+
+        for skinSettings in self.jsonArray:
+            self.validationUtils.processInputSetting(skinSettings)
+
+            if self.validationUtils.isInvalid:
+                continue
+
+            self.batchProcessing.processObjectCount += 1
+
+            self.skinNodeArray.append(skinSettings.deformerName)
+
 
 class AsciiInjection(DataInjection):
     def __init__(self):
         super(AsciiInjection, self).__init__()
 
         self.mayaFileType = "mayaAscii"
-
-    def importWeight(self, 
-                     inputFile, 
-                     archive, 
-                     inputSkin):
-        self.consolidateFile(archive, inputFile, inputSkin)
-        #maya.cmds.select(inputSkin, r=True)
-        maya.cmds.file("C:/Users/cedric/Desktop/skinIO/UU2.ma",
-                       i=True, 
-                       type="mayaAscii")
-                           
-    def importWeights(self,
-                      sourceArchiveFile):
-        if not os.path.exists(sourceArchiveFile):
-            return
-
-        jsonArray = []
-        with zipfile.ZipFile(sourceArchiveFile, 'r') as archive:
-            jsonList = [info.filename for info in archive.infolist() 
-                        if info.filename.endswith('.json')]
-
-            jsonArray = [json.loads(archive.read(jsonElement)) for jsonElement in jsonList]
-
-        if len(jsonArray) == 0:
-            return
-
-        jsonSettings = jsonArray[0]
-    
-        with zipfile.ZipFile(sourceArchiveFile, 'r') as archive:
-            with self.timeProcessing:
-                for skin in jsonSettings :
-                    inputFile = os.path.basename(skin)
-                    inputSkin = jsonSettings[skin][0]
-
-                    self.importWeight(inputFile, archive, inputSkin)
 
     def export(self,
                inputTransform,
@@ -642,6 +733,92 @@ class AsciiInjection(DataInjection):
                                                           None)
 
         return skinSettings
+
+    def processWeights(self,
+                       unpackDirectory):
+        super(AsciiInjection, self).processWeights(unpackDirectory)
+
+        self.importWeights(unpackDirectory)
+
+    def importWeights(self,
+                      unpackDirectory,
+                      sourceFile=False):
+        for skinSettings in self.jsonArray:
+            if skinSettings.deformerName not in self.skinNodeArray:
+                continue
+
+            skinSettings.abcWeightsFile = os.path.basename(skinSettings.abcWeightsFile)
+
+            skinSettings.abcWeightsFile = os.path.join(unpackDirectory,
+                                                       skinSettings.abcWeightsFile)
+
+            skinSettings.abcWeightsFile = skinSettings.abcWeightsFile.replace('\\', '/')
+
+            targetFile = self.consolidateFile(skinSettings.abcWeightsFile)
+
+            with context.SkinDisabled(skinSettings.deformerName):
+                maya.cmds.select(skinSettings.deformerName, 
+                                 r=True)
+
+                maya.cmds.skinPercent(skinSettings.deformerName,
+                                      '{}.vtx[*]'.format(skinSettings.shape), 
+                                      transformValue=[(skinSettings.influences[0], 0.0)])
+
+                if sourceFile is True:
+                    maya.mel.eval('source "{0}";'.format(targetFile))
+                else:
+                    maya.cmds.file(targetFile,
+                                   i=True, 
+                                   type=self.mayaFileType)
+
+
+            self.reportArray.append(self.reporter.publishImportReport(skinSettings.shape, 
+                                                                      self.timeProcessing.report,
+                                                                      skinSettings.abcWeightsFile,
+                                                                      self.validationUtils.rebuildTime,
+                                                                      self.validationUtils.skinWasrebuilt))
+
+            if self.batchProcessing.displayProgressbar is True:
+                self.batchProcessing.progressbar.advanceProgress(1)
+
+        self.timeProcessing.report = ''
+
+        for report in self.reportArray:
+            self.timeProcessing.report += report.replace('\n', '\n\t')
+
+            self.timeProcessing.report += '\n'
+
+    def consolidateFile(self, 
+                        weightsFile):
+        tempDirectory = os.path.dirname(weightsFile)
+        targetFile = "{0}/{1}.temp".format(tempDirectory,
+                                           os.path.basename(weightsFile))
+        
+        with open(targetFile, 'w') as asciiFile:
+            asciiFile.write('requires maya "2015";')
+            for line in self.filterAscii(weightsFile):
+                asciiFile.write(line)
+
+        return targetFile
+
+    def filterAscii(self,
+                    weightsFile):
+        startCollect = False
+        with open(weightsFile, 'r') as asciiFile:
+            for line in asciiFile:
+                if 'createNode skinCluster -n' in line:
+                    startCollect = True
+
+                if startCollect is True and 'createNode' not in line:
+                    if 'rename -uid' not in line:
+                        yield line
+
+                if startCollect is True and line.endswith('".pm";'):
+                    startCollect = False
+
+                if startCollect is True and 'createNode' in line and \
+                    'createNode skinCluster -n' not in line:
+                    startCollect = False
 
 
 class BinaryInjection(DataInjection):
@@ -695,26 +872,50 @@ class BinaryInjection(DataInjection):
                       targetSkinFile,
                       skinNodeArray=None,
                       namespacePrefix="skinNamespace_weights"):
-        with self.timeProcessing, context.TemporaryNamespace(None,
-                                                     namespacePrefix,
-                                                     targetSkinFile,
-                                                     fileType="mayaBinary"):
-            importSkinNodeArray = maya.cmds.namespaceInfo(namespacePrefix, 
-                                                          listOnlyDependencyNodes=True)
+        self.timeProcessing.displayProgressbar = True
+        self.timeProcessing.progressbarRange = len(self.skinNodeArray)
+        self.timeProcessing.displayReport = False
 
-            if skinNodeArray is None:
-                skinNodeArray = [skin.replace(namespacePrefix+':', '')
-                                 for skin in importSkinNodeArray 
-                                 if maya.cmds.objExists(skin.replace(namespacePrefix+':', '')) is True \
-                                 and maya.cmds.nodeType(skin) == 'skinCluster']
+        with self.timeProcessing:
+            with context.TemporaryNamespace(None,
+                                            namespacePrefix,
+                                            targetSkinFile=targetSkinFile,
+                                            fileType="mayaBinary"):
+                importSkinNodeArray = maya.cmds.namespaceInfo(namespacePrefix, 
+                                                              listOnlyDependencyNodes=True)
 
-            for skin in skinNodeArray:
-                maya.cmds.nodeCast(skin, namespacePrefix+':' + skin, 
-                                   disconnectUnmatchedAttrs=True,
-                                   swapNames=True )
+                if skinNodeArray is None:
+                    skinNodeArray = [skin.replace(namespacePrefix+':', '')
+                                     for skin in importSkinNodeArray 
+                                     if maya.cmds.objExists(skin.replace(namespacePrefix+':', '')) is True \
+                                     and maya.cmds.nodeType(skin) == 'skinCluster']
 
-            report = "\n\t<BinaryInjection Report \Import {0} elements>"
-            self.timeProcessing.report = report.format(len(skinNodeArray))
+                for skin in skinNodeArray:
+                    maya.cmds.nodeCast(skin, 
+                                       namespacePrefix+':' + skin, 
+                                       disconnectUnmatchedAttrs=True,
+                                       swapNames=True )
+                    if self.timeProcessing.displayProgressbar is True:
+                        self.timeProcessing.progressbar.advanceProgress(1)
+
+                self.timeProcessing.report = "\n<BinaryInjection Report"
+
+    def processWeights(self,
+                      unpackDirectory):
+        super(BinaryInjection, self).processWeights(unpackDirectory)
+
+        targetSkinFileArray = [file 
+                               for file in os.listdir(unpackDirectory) 
+                               if file.endswith('_skinweight.mb')]
+
+        if len(targetSkinFileArray) ==0:
+            return
+
+        targetSkinFile = posixpath.join(unpackDirectory,
+                                        targetSkinFileArray[0]).replace('\\', '/')
+
+        self.importWeights(targetSkinFile,
+                           skinNodeArray=self.skinNodeArray)
 
 
 class AlembicInjection(DataInjection):
@@ -724,6 +925,8 @@ class AlembicInjection(DataInjection):
         self.sourceAlembic = None
 
         super(AlembicInjection, self).__init__()
+
+        self.mayaFileType = "alembicIO"
 
     def getMObject(self, nodeName):
         selList = maya.OpenMaya.MSelectionList()
@@ -842,7 +1045,7 @@ class AlembicInjection(DataInjection):
                       skinSettings,
                       unpackDirectory):
         self.sourceAlembic = os.path.join(unpackDirectory,
-                                     os.path.basename(skinSettings.abcWeightsFile))
+                                          os.path.basename(skinSettings.abcWeightsFile))
 
         self.sourceAlembic = self.sourceAlembic.replace("\\", "/")
 
@@ -873,6 +1076,32 @@ class AlembicInjection(DataInjection):
                                                   False,
                                                   skinData.oldValues) 
 
+    def processWeights(self,
+                      unpackDirectory):
+        super(AlembicInjection, self).processWeights(unpackDirectory)
+
+        with context.TemporaryNamespace(self.validationUtils.rootNameSpace,
+                                        self.validationUtils.namespacePrefix):
+            for skinSettings in self.jsonArray:
+                self.importWeights(skinSettings,
+                                   unpackDirectory)
+
+                self.reportArray.append(self.reporter.publishImportReport(skinSettings.shape, 
+                                                                          self.timeProcessing.report,
+                                                                          self.sourceAlembic,
+                                                                          self.validationUtils.rebuildTime,
+                                                                          self.validationUtils.skinWasrebuilt))
+
+                if self.batchProcessing.displayProgressbar is True:
+                    self.batchProcessing.progressbar.advanceProgress(1)
+
+        self.timeProcessing.report = ''
+
+        for report in self.reportArray:
+            self.timeProcessing.report += report.replace('\n', '\n\t\t')
+
+            self.timeProcessing.report += '\n'
+
 
 class SkinIO(object):
     TARGET_WEIGHT_PROPERTY = 'skinRepository'
@@ -898,149 +1127,34 @@ class SkinIO(object):
 
         self.processingTime = 0
 
-    def importFromAlembic(self, 
-                          jsonDataArray,
-                          unpackDirectory,
-                          batchProcessing):
-        self.skinProcessor = AlembicInjection()
-
-        validationUtils = validation.SkinValidator()
-
-        validationUtils.rootNameSpace = maya.cmds.namespaceInfo(currentNamespace=True)
-
-        validationUtils.namespacePrefix = self.WEIGHT_NAMESPACE
-
-        with context.TemporaryNamespace(validationUtils.rootNameSpace,
-                                validationUtils.namespacePrefix):
-
-            self.timeProcessing.displayReport = False
-            self.timeProcessing.report = ''
-
-            for skinSettings in jsonDataArray:
-                validationUtils.processInputSetting(skinSettings)
-
-                if validationUtils.isInvalid:
-                    continue
-
-                batchProcessing.processObjectCount += 1
-
-                self.skinProcessor.importWeights(skinSettings,
-                                                 unpackDirectory)
-
-                self.reportArray.append(self.reporter.publishImportReport(skinSettings.shape, 
-                                                                          self.skinProcessor.timeProcessing.report,
-                                                                          self.skinProcessor.sourceAlembic,
-                                                                          validationUtils.rebuildTime,
-                                                                          validationUtils.skinWasrebuilt))
-
-                batchProcessing.progressbar.advanceProgress(1)
-
-    def importFromMayaBinary(self, 
-                             jsonData,
-                             unpackDirectory,
-                             batchProcessing):
-        self.skinProcessor = BinaryInjection()
-
-        validationUtils = validation.SkinValidator()
-
-        validationUtils.rootNameSpace = maya.cmds.namespaceInfo(currentNamespace=True)
-
-        validationUtils.namespacePrefix = self.WEIGHT_NAMESPACE
-
-        skinNodeArray = []
-
-        batchProcessing.displayProgressbar = False
-
-        for skinSettings in jsonData.itervalues() :
-            validationUtils.processInputSetting(skinSettings)
-
-            if validationUtils.isInvalid:
-                continue
-
-            batchProcessing.processObjectCount += 1
-
-            skinNodeArray.append[skinSettings.deformerName]
-
-        targetSkinFile = None
-        self.skinProcessor.importWeights(targetSkinFile,
-                                         skinNodeArray=skinNodeArray,
-                                         namespacePrefix=self.WEIGHT_NAMESPACE)
-
-    def importWeights(self, 
-                      jsonData,
-                      unpackDirectory,
-                      batchProcessing):
-        self.reportArray = []
-
-        if self.skinHandler == 'alembicIO':
-            self.importFromAlembic(jsonData,
-                                   unpackDirectory,
-                                   batchProcessing)
-
-        elif self.skinHandler == 'mayaBinary':
-            self.importFromMayaBinary(jsonData,
-                                      unpackDirectory,
-                                      batchProcessing)
-
-        elif self.skinHandler == 'mayaAscii':
-            pass
-
-        for report in self.reportArray:
-            self.timeProcessing.report += report.replace('\n', '\n\t\t')
-
-            self.timeProcessing.report += '\n'
-
-    def parseJsonFromArchive(self,
-                             sourceArchiveFile):
-        with zipfile.ZipFile(sourceArchiveFile, 'r') as archive:
-            jsonList = [info.filename for info in archive.infolist() 
-                        if info.filename.endswith('.json')]
-
-            jsonInput = [json.loads(archive.read(jsonElement)) for jsonElement in jsonList][0]
-
-        jsonArray = []
-        for jsonData in jsonInput:
-            skinData = settings.SkinSettings(None,
-                                    collectData=False)
-
-            skinData.fromJson(jsonInput[jsonData])
-
-            jsonArray.append(skinData)
-
-        return jsonArray
-
     def importAssetWeights(self, 
                            sourceArchiveFile,
                            exposeWeightDetails=True,
-                           showProgressbar=True):
-        if not os.path.exists(sourceArchiveFile):
+                           showProgressbar=True,
+                           loadOnSelection=False):
+        self.skinProcessor = DataInjection()
+        archiveIsValid = self.skinProcessor.processArchive(sourceArchiveFile)
+
+        if not archiveIsValid:
             return
 
-        jsonSettings = self.parseJsonFromArchive(sourceArchiveFile)
+        self.skinHandler = str(self.skinProcessor.injectionSettings.weightMode)
 
-        batchProcessing = context.TimeProcessor()
-        batchProcessing.displayProgressbar = showProgressbar
-        batchProcessing.displayReport = False
-        batchProcessing.progressbarRange = len(jsonSettings)
+        if self.skinHandler == 'alembicIO':
+            self.skinProcessor = AlembicInjection()
 
-        with batchProcessing:
-            with context.TemporaryDirectory() as unpackDirectory, \
-            zipfile.ZipFile(sourceArchiveFile, 'r') as archive:
-                archive.extractall(unpackDirectory)
-                batchProcessing.report = '\n<Batch Processing report :>' 
+        elif self.skinHandler == 'mayaBinary':
+            self.skinProcessor = BinaryInjection()
+            showProgressbar = False
 
-                self.importWeights(jsonSettings,
-                                   unpackDirectory,
-                                   batchProcessing)
+        elif self.skinHandler == 'mayaAscii':
+            self.skinProcessor = AsciiInjection()
 
-                batchProcessing.report += self.timeProcessing.report
+        self.skinProcessor.importAssetWeights(sourceArchiveFile,
+                                              exposeWeightDetails=exposeWeightDetails,
+                                              showProgressbar=showProgressbar)
 
-                batchProcessing.report += '\n<Successfully processed {} components>'.format(batchProcessing.processObjectCount) 
-
-        if exposeWeightDetails is True:
-            print batchProcessing.report
-
-        return float(batchProcessing.timeRange)
+        return
 
     def exportAssetWeights(self,
                            objectArray,

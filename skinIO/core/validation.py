@@ -22,7 +22,7 @@
 
     https://opensource.org/licenses/MIT
 """
-
+import os
 
 import maya.OpenMaya 
 import maya.OpenMayaAnim 
@@ -30,10 +30,13 @@ import maya.OpenMayaUI
 import maya.cmds 
 import maya.mel
 
-from skinIO import context
-
+from skinIO.core import context
+reload(context)
 
 class SkinValidator(object):
+    """
+        Test procedure validating if a skin file can be imported on the provided shape
+    """
     def __init__(self):
         self.isInvalid = False
 
@@ -345,6 +348,9 @@ class SkinValidator(object):
 
 
 class JointReport(object):
+    """
+        Datastructure used to report missing influences
+    """
     def __init__(self):
         self.canFindAllJoints = True
 
@@ -352,6 +358,9 @@ class JointReport(object):
 
 
 class SkinReport(object):
+    """
+        Expose utility class use for debugging purposes
+    """
     def __init__(self):
         self.inputSkinNode = None
 
@@ -375,9 +384,9 @@ class SkinReport(object):
         vertexCount = maya.cmds.polyEvaluate(metaData[1], v=True)
 
         componentReport = '\n<Skin Weights Saving report:>' 
-        componentReport += '\n\tExport to {} was successful'.format(targetSkinFile) 
+        componentReport += '\n\tExport to {} was successful'.format(os.path.basename(targetSkinFile)) 
         componentReport += '\n\tGeometry {0}'.format(metaData[1]) 
-        componentReport += '\n\t\tNumber of vertex {0}'.format(vertexCount)
+        componentReport += '\n\t\tNumber of points {0}'.format(vertexCount)
         componentReport += '\n\t\tNumber of influences {0}'.format(metaData[0]) 
         componentReport += '\n\t\tNumber of weights Samples {0}'.format(sampleLength)
 
