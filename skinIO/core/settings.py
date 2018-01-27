@@ -42,6 +42,15 @@ import getpass
 import datetime
 
 
+for pluginName in ('AbcExport',
+                   'AbcImport'):
+    if maya.cmds.pluginInfo(pluginName, 
+                            query=True,
+                           loaded=True):
+        continue
+    maya.cmds.loadPlugin(pluginName)
+
+
 class ObjectEncoder(json.JSONEncoder):
     def default(self, inputObject):
         if hasattr(inputObject, "to_json"):
@@ -139,16 +148,16 @@ class SkinSet(object):
         if self.shapeType in simpleShapeType:
             self.componentType = maya.OpenMaya.MFn.kMeshVertComponent
 
+            pointComponentFunction = maya.OpenMaya.MFnSingleIndexedComponent()
+
             if self.shapeType == 'mesh':
                 shapeFunctionUtils = maya.OpenMaya.MFnMesh(self.shapePath)
                 self.pointCount = shapeFunctionUtils.numVertices()
 
-                pointComponentFunction = maya.OpenMaya.MFnSingleIndexedComponent()
-
             elif self.shapeType == 'nurbsCurve':
                 shapeFunctionUtils = maya.OpenMaya.MFnNurbsCurve(self.shapePath)
-                self.pointCount = shapeFunctionUtils.numVertices()
-                self.componentType = OpenMaya.MFn.kCurveCVComponent
+                self.pointCount = shapeFunctionUtils.numCVs()
+                self.componentType = maya.OpenMaya .MFn.kCurveCVComponent
 
             self.fullComponentPointSet = pointComponentFunction.create(self.componentType)
             pointComponentFunction.setCompleteData(self.pointCount)
@@ -167,15 +176,27 @@ class SkinSet(object):
 
         elif self.shapeType == 'lattice':
             self.componentType = maya.OpenMaya.MFn.kLatticeComponent
-            shapeFunctionUtils = maya.OpenMaya.MFnLattice(self.shapePath)
+            shapeFunctionUtils = maya.OpenMayaAnim.MFnLattice(self.shapePath)
 
-            sDivivision = 0
-            tDivivision = 0
-            uDivivision = 0
+            sDivivisionParam = maya.OpenMaya.MScriptUtil()
+            sDivivisionParam.createFromInt(0)    
+            sDivivisionPtr = sDivivisionParam.asUintPtr()    
 
-            shapeFunctionUtils.getDivisions(sDivivision,
-                                            tDivivision,
-                                            uDivivision)
+            tDivivisionParam = maya.OpenMaya.MScriptUtil()
+            tDivivisionParam.createFromInt(0)    
+            tDivivisionPtr = tDivivisionParam.asUintPtr()  
+
+            uDivivisionParam = maya.OpenMaya.MScriptUtil()
+            uDivivisionParam.createFromInt(0)    
+            uDivivisionPtr = uDivivisionParam.asUintPtr()  
+
+            shapeFunctionUtils.getDivisions(sDivivisionPtr,
+                                            tDivivisionPtr,
+                                            uDivivisionPtr)
+
+            sDivivision = maya.OpenMaya.MScriptUtil(sDivivisionPtr).asInt()
+            tDivivision = maya.OpenMaya.MScriptUtil(tDivivisionPtr).asInt()
+            uDivivision = maya.OpenMaya.MScriptUtil(uDivivisionPtr).asInt()
 
             self.pointCount = sDivivision * tDivivision * uDivivision
 
@@ -220,6 +241,7 @@ class SkinSet(object):
 
     def extractEmptyWeights(self):
         self.weightUtils = OpenMaya.MDoubleArray(self.pointCount, 0.0)
+
 
 class InjectionSettings(object):
     def __init__(self,
@@ -342,7 +364,8 @@ class SkinSettings(object):
 
 
 class ShapeSettings(object):
-    def __init__(self, shape):
+    def __init__(self, 
+                 shape):
         self.shape = shape
         self.shapePath = maya.OpenMaya.MDagPath()
         self.transform = None
@@ -355,7 +378,30 @@ class ShapeSettings(object):
 
         self.getShapeSettings()
 
-    def getMObject(self, nodeName):
+    @staticmethod
+    def getShapeFromTransform(transformName):
+        inputShapeArray = maya.cmds.listRelatives(transformName,
+                                                  s=True,
+                                                  ni=True)
+
+        if not inputShapeArray:
+            return None
+
+        for currentShape in inputShapeArray:
+            shapeApiObject = ShapeSettings.getMObject(inputShapeArray[0])
+            shapePath = maya.OpenMaya.MDagPath()
+
+            maya.OpenMaya.MDagPath.getAPathTo(shapeApiObject,
+                                              shapePath)
+
+            geometryProcessor = maya.OpenMaya.MItGeometry(shapePath)
+            if geometryProcessor.count()==0:
+                return None
+
+        return inputShapeArray[0]
+
+    @staticmethod
+    def getMObject(nodeName):
         selList = maya.OpenMaya.MSelectionList()
         maya.OpenMaya.MGlobal.getSelectionListByName(nodeName, 
                                                      selList)

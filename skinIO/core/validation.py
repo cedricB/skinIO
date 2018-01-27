@@ -31,7 +31,8 @@ import maya.cmds
 import maya.mel
 
 from skinIO.core import context
-reload(context)
+from skinIO.core import settings
+
 
 class SkinValidator(object):
     """
@@ -145,6 +146,14 @@ class SkinValidator(object):
         isValidNode = maya.cmds.objExists(inputShapePath)
 
         return isValidNode
+
+    def validateShape(self, inputShapePath):
+        shapeData = settings.ShapeSettings(inputShapePath)
+
+        if shapeData.pointCount==0:
+            return True
+        
+        return False
 
     def validateDeformer(self, inputDeformerName):
         skinComponents = maya.cmds.ls(inputDeformerName, 
@@ -304,11 +313,13 @@ class SkinValidator(object):
             processing.displayReport = False
 
             with processing:
-                maya.cmds.namespace(setNamespace=self.rootNameSpace)
+                if maya.cmds.namespace(exists=self.rootNameSpace):
+                    maya.cmds.namespace(setNamespace=self.rootNameSpace)
 
                 skinSettings.deformerName = self.rebuildSkinCluster(skinSettings)
 
-                maya.cmds.namespace(setNamespace=self.namespacePrefix)
+                if maya.cmds.namespace(exists=self.namespacePrefix):
+                    maya.cmds.namespace(setNamespace=self.namespacePrefix)
 
             self.rebuildTime = float(processing.timeRange)
 

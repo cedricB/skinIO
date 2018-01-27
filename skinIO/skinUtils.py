@@ -45,11 +45,9 @@ from skinIO.core import context
 from skinIO.core import settings
 from skinIO.core import validation
 
-reload(context)
-reload(settings)
-reload(validation)
 
-__version__ = '0.38.9'
+
+__version__ = '0.38.95'
 
 
 class Omphallos(object):
@@ -581,8 +579,22 @@ class DataInjection(object):
         self.batchProcessing.report += '\n\t Saving {} elements took {} seconds\n'.format(len(self.sceneWeights),
                                                                                           self.processingTime)
 
+    def validateObjectArray(self,
+                            inputObjectArray):
+        objectArray = []
+
+        for node in inputObjectArray:
+            shapeData = settings.ShapeSettings.getShapeFromTransform(node)
+
+            if shapeData is None:
+                continue
+
+            objectArray.append(node)
+
+        return objectArray
+
     def exportAssetWeights(self,
-                           objectArray,
+                           inputObjectArray,
                            targetSkinFile,
                            exposeWeightDetails=True,
                            showProgressbar=True):
@@ -595,6 +607,11 @@ class DataInjection(object):
 
             showProgressbar(bool).
         """
+        if len(inputObjectArray) == 0:
+            return 'Object array is empty'
+
+        objectArray = self.validateObjectArray(inputObjectArray)
+
         if len(objectArray) == 0:
             return 'Object array is empty'
 
@@ -685,7 +702,7 @@ class DataInjection(object):
         return float(self.batchProcessing.timeRange)
 
     def processWeights(self,
-                      unpackDirectory):
+                       unpackDirectory):
         self.validationUtils = validation.SkinValidator()
 
         self.validationUtils.rootNameSpace = maya.cmds.namespaceInfo(currentNamespace=True)
